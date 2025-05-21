@@ -1,16 +1,22 @@
 import dlt
 from mounts_pipeline import blizzard_api_source as mount_source
-from dungeons_pipeline import dungeon_api_source
+from journal_pipeline import journal_api_source
+from journal_encounters_pipeline import journal_encounter_source
+from items_pipeline import item_api_source  # ✅ ADD THIS
 
-# Toggle pipelines here 👇
 PIPELINES = {
     "mounts": False,
-    "dungeons": True
+    "journal": False,
+    "journal_encounters": False,
+    "items": True  # ✅ Enable when needed
 }
 
+# ✅ Fixed destination: outputs to your dbt_wow_assistant folder
 pipeline = dlt.pipeline(
     pipeline_name="wow_pipeline",
-    destination="duckdb",
+    destination=dlt.destinations.duckdb(
+        credentials="dbt_wow_assistant/wow_assistant.duckdb"
+    ),
     dataset_name="raw"
 )
 
@@ -21,9 +27,16 @@ def run_selected_pipelines():
         print("[🐎] Mounts enabled — adding to run list.")
         sources.append(mount_source())
 
-    if PIPELINES.get("dungeons"):
-        print("[🏰] Dungeons enabled — adding to run list.")
-        sources.append(dungeon_api_source())
+    if PIPELINES.get("journal"):
+        print("[📘] Journal Instances enabled — adding to run list.")
+        sources.append(journal_api_source(limit=None))  # Limit for testing
+
+    if PIPELINES.get("journal_encounters"):
+        print("[⚔️] Journal Encounters enabled.")
+        sources.append(journal_encounter_source(limit=None))  # Limit for testing
+    if PIPELINES.get("items"):
+        print("[🧤] Item API enabled — fetching item data.")
+        sources.append(item_api_source(calls_per_hour=25000))  # ✅ Adjust this limit
 
     if not sources:
         print("⚠️ No pipelines selected to run. Update the PIPELINES dict.")
