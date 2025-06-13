@@ -18,10 +18,10 @@ def _fetch_ids():
 REALM_IDS = _fetch_ids()
 
 # Fetch ah
-@dlt.resource(table_name="weapons_armor", write_disposition="replace")
+@dlt.resource(table_name="auctions", write_disposition="replace")
 def retrieve_auction_house_items():
     counter = 0 #DEBUG
-    for realm_id in REALM_IDS[:2]:
+    for realm_id in REALM_IDS[:10]: # 92
         try:
             endpoint = f"/data/wow/connected-realm/{realm_id}/auctions"                             
             params = {                
@@ -29,17 +29,33 @@ def retrieve_auction_house_items():
                 "namespace" : "dynamic-eu",
                 }
             response = auth_util.get_auth_token_and_request(endpoint=endpoint, params=params)
+            response.raise_for_status()
             counter += 1 #DEBUG
             data = response.json()
             for auction in data["auctions"]:
                 auction["realm_id"] = realm_id
             yield data["auctions"]
         except Exception as e:
-            print(f"DENNA MISSLYCKADES nr{counter}")
+            print(f"DENNA MISSLYCKADES nr{counter} realm id: {realm_id}")
         print(f"\nYIELDAT NR {counter} <-------------------\n") #DEBUG
     
+@dlt.resource(table_name="realm_data", write_disposition="replace")
+def fetch_realm_data():
+    for realm_id in REALM_IDS:
+        endpoint = f"/data/wow/connected-realm/{realm_id}"
+        params = {                
+            "{{connectedRealmId}}" : realm_id,
+            "namespace" : "dynamic-eu",
+            }
+        response = auth_util.get_auth_token_and_request(endpoint=endpoint, params=params)
+        response.raise_for_status()
+        data = response.json()
+        yield data
+        print(f"Yieldat connected realm {realm_id}!")
+
+
 # Fetch ah commodities
-@dlt.resource(table_name="wow_commodities", write_disposition="replace") # merge?
+@dlt.resource(table_name="commodities", write_disposition="replace") # merge?
 def fetch_ah_commodities():
     pass
 
@@ -56,7 +72,7 @@ def wow_ah_source():
     This is the source function that will be used in the pipeline.
     It returns all the resources that we want to run in the pipeline.
     """
-    return [retrieve_auction_house_items()]
+    return [retrieve_auction_house_items(), fetch_realm_data()]
     
 
 

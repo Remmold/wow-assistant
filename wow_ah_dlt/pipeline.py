@@ -3,7 +3,7 @@ from resources import wow_ah_source
 
 def run_pipeline():
     pipeline = dlt.pipeline(
-    pipeline_name="wow_ah",  # The name of the pipeline
+    pipeline_name="wow_api_data",  # The name of the pipeline
     destination="duckdb",  # The destination where the data will be loaded
     dataset_name="raw"  # The name of the dataset
     )
