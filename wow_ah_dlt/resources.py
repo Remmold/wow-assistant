@@ -10,7 +10,7 @@ def _fetch_ids():
     params = {
         "namespace" : "dynamic-eu"
     }
-    response = auth_util.get_auth_token_and_request(endpoint=endpoint, params=params)
+    response = auth_util.get_response(endpoint=endpoint, params=params)
     connected_realm_list = response.json()["connected_realms"]
     
     list_of_realm_ids = [x["href"].split("/")[-1].split("?")[0] for x in connected_realm_list]
@@ -19,7 +19,7 @@ REALM_IDS = _fetch_ids()
 
 # Fetch ah
 @dlt.resource(table_name="auctions", write_disposition="replace")
-def retrieve_auction_house_items():
+def fetch_auction_house_items():
     counter = 0 #DEBUG
     for realm_id in REALM_IDS[:10]: # 92
         try:
@@ -28,7 +28,7 @@ def retrieve_auction_house_items():
                 "{{connectedRealmId}}" : realm_id,
                 "namespace" : "dynamic-eu",
                 }
-            response = auth_util.get_auth_token_and_request(endpoint=endpoint, params=params)
+            response = auth_util.get_response(endpoint=endpoint, params=params)
             response.raise_for_status()
             counter += 1 #DEBUG
             data = response.json()
@@ -47,7 +47,7 @@ def fetch_realm_data():
             "{{connectedRealmId}}" : realm_id,
             "namespace" : "dynamic-eu",
             }
-        response = auth_util.get_auth_token_and_request(endpoint=endpoint, params=params)
+        response = auth_util.get_response(endpoint=endpoint, params=params)
         response.raise_for_status()
         data = response.json()
         yield data
@@ -60,10 +60,42 @@ def fetch_ah_commodities():
     pass
 
 
-# Fetch items
-@dlt.resource(table_name="wow_items",write_disposition="merge",primary_key="id")
+@dlt.resource(table_name="wow_items", write_disposition="merge", primary_key="id")
 def fetch_items():
-    pass
+    endpoint = "/data/wow/search/item"
+    params = {
+        ":region": "eu",
+        "namespace": "static-eu",
+        "orderby": "id",
+        "_page": 1,
+        #"item_class.name.en_US": "Armor",
+        #"item_subclass.name.en_US": "Leather",
+        #"quality.name.en_US": "Legendary",
+        "locale": "en_US",
+    }
+    page = 1
+    while True:
+        params["_page"] = page
+        print(params["_page"])
+        response = auth_util.get_response(endpoint=endpoint, params=params)
+        print(response)
+        print("test")
+        data = response.json()
+        results = data.get("results", [])
+        if not results:
+            print("⚠️ No more results found. Stopping pagination.")
+            break
+        for item in results:
+            yield item["data"]
+        if page == 11:
+            print("⚠️ 1000 results fetched - limit reached for this run.")
+            break
+        print(f"Fetched {len(results)} results...")
+        page += 1
+
+
+
+
 
 # @dlt.source that we use in pipeline.run instead of @dlt.resource we use all the resources we want to run in the pipeline
 @dlt.source(name="wow_ah")
@@ -72,11 +104,7 @@ def wow_ah_source():
     This is the source function that will be used in the pipeline.
     It returns all the resources that we want to run in the pipeline.
     """
-    return [retrieve_auction_house_items(), fetch_realm_data()]
-    
-
-
-
+    return [fetch_items(),fetch_realm_data(), fetch_auction_house_items()]
 
 
 
