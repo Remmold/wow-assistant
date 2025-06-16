@@ -60,6 +60,21 @@ def fetch_realm_data():
 def fetch_ah_commodities():
     pass
 
+# Returns a list of indexes for item classes
+def fetch_item_classes(): 
+    endpoint = "/data/wow/item-class/index"
+    params = {
+        "namespace": "static-eu"
+    }
+    item_class_ids = []
+    response = auth_util.get_api_response(endpoint=endpoint, params=params)
+    data = response.json()
+    for id in data.get("item_classes", []):
+        print(id["id"])
+        item_class_ids.append(id["id"])
+    return item_class_ids
+
+
 
 @dlt.resource(table_name="items", write_disposition="merge", primary_key="id")
 def fetch_items():
@@ -67,9 +82,7 @@ def fetch_items():
     params = {
         "namespace": "static-eu",
         "orderby": "id",
-        "locale": "en_US",
         "_page": 1,
-
     }
     page = 1
     while True:
@@ -106,4 +119,6 @@ def wow_ah_source():
 
 
 
+if __name__ == "__main__":
+    fetch_item_classes()
 
