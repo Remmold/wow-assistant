@@ -74,6 +74,41 @@ def fetch_item_classes():
         item_class_ids.append(id["id"])
     return item_class_ids
 
+def fetch_item_subclasses():
+    item_class_ids = fetch_item_classes()
+    subclass_dict = {}
+
+    for item_class_id in item_class_ids:
+        endpoint = f"/data/wow/item-class/{item_class_id}"
+        params = {
+            "namespace": "static-eu",
+            "region": "eu"
+        }
+
+        response = auth_util.get_api_response(endpoint=endpoint, params=params)
+        data = response.json()
+
+        subclass_ids = [subclass["id"] for subclass in data.get("item_subclasses", [])]
+        subclass_dict[item_class_id] = subclass_ids
+
+        print(f"Item class {item_class_id} has subclasses: {subclass_ids}")
+
+    return subclass_dict
+
+
+
+        
+
+
+
+
+def build_item_class_dict():
+    item_class_dict = {}
+    item_classes = fetch_item_classes()
+    for item_class in item_classes:
+        subclasses = fetch_item_subclasses(item_class)
+        item_class_dict[item_class] = [subclass["id"] for subclass in subclasses]
+    return item_class_dict
 
 
 @dlt.resource(table_name="items", write_disposition="merge", primary_key="id")
@@ -120,5 +155,5 @@ def wow_ah_source():
 
 
 if __name__ == "__main__":
-    fetch_item_classes()
+    fetch_item_subclasses()
 
