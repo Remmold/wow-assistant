@@ -96,48 +96,57 @@ def fetch_item_subclasses():
     return subclass_dict
 
 
-
-        
-
-
-
-
-def build_item_class_dict():
-    item_class_dict = {}
-    item_classes = fetch_item_classes()
-    for item_class in item_classes:
-        subclasses = fetch_item_subclasses(item_class)
-        item_class_dict[item_class] = [subclass["id"] for subclass in subclasses]
-    return item_class_dict
-
-
 @dlt.resource(table_name="items", write_disposition="merge", primary_key="id")
 def fetch_items():
-    endpoint = "/data/wow/search/item"
-    params = {
-        "namespace": "static-eu",
-        "orderby": "id",
-        "_page": 1,
-    }
-    page = 1
-    while True:
-        params["_page"] = page
-        print(params["_page"])
-        response = auth_util.get_api_response(endpoint=endpoint, params=params)
-        print("test")
-        data = json.loads(response.content.decode("utf8"))
-        print(data)
-        results = data.get("results", [])
-        if not results:
-            print("⚠️ No more results found. Stopping pagination.")
-            break
-        for item in results:
-            yield item["data"]
-        if page == 11:
-            print("⚠️ 1000 results fetched - limit reached for this run.")
-            break
-        print(f"Fetched {len(results)} results...")
-        page += 1
+    subclass_dict = fetch_item_subclasses()
+    all_items = []
+    rarities = [
+        "poor",        # gray
+        "common",      # white
+        "uncommon",    # green
+        "rare",        # blue
+        "epic",        # purple
+        "legendary",   # orange
+        "artifact",    # gold
+        "heirloom"     # light gold
+    ]
+
+    for item_class_id, subclass_ids in subclass_dict.items():
+        for subclass_id in subclass_ids:
+            for rarity in rarities:
+                page = 1
+                while True:
+                    endpoint = "/data/wow/search/item"
+                    params = {
+                        "namespace": "static-eu",
+                        "orderby": "id",
+                        "_page": page,
+                        "item_class.id": item_class_id,
+                        "item_subclass.id": subclass_id,
+                        "quality.name.en_US": rarity,
+                    }
+
+                    response = auth_util.get_api_response(endpoint=endpoint, params=params)
+                    data = response.json()
+
+                    results = data.get("results", [])
+                    if not results:
+                        break
+
+                    for result in results:
+                        yield result["data"]
+
+                    print(f"Fetched {len(results)} items for class {item_class_id}, subclass {subclass_id}, page {page}")
+                    
+                    page += 1
+
+                    if page > 10:
+                        print(f"⚠️ Stopped after 10 pages for subclass {subclass_id}")
+                        break
+
+    print(f"✅ Fetched total {len(all_items)} items.")
+    return all_items
+
 
 
 
@@ -150,7 +159,7 @@ def wow_ah_source():
     This is the source function that will be used in the pipeline.
     It returns all the resources that we want to run in the pipeline.
     """
-    return [fetch_items()]
+    return [fetch_items(),fetch_auction_house_items(),fetch_realm_data()]
 
 
 
