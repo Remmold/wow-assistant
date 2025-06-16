@@ -1,5 +1,6 @@
 import dlt
 import auth_util
+import json
 
 # Fetch and bring all the connected realm ids cut out the id from url and put into a list
 def _fetch_ids():
@@ -60,13 +61,13 @@ def fetch_ah_commodities():
     pass
 
 
-@dlt.resource(table_name="test", write_disposition="merge", primary_key="id")
+@dlt.resource(table_name="items", write_disposition="merge", primary_key="id")
 def fetch_items():
     endpoint = "/data/wow/search/item"
     params = {
-        ":region": "eu",
         "namespace": "static-eu",
         "orderby": "id",
+        "locale": "en_US",
         "_page": 1,
 
     }
@@ -75,9 +76,9 @@ def fetch_items():
         params["_page"] = page
         print(params["_page"])
         response = auth_util.get_api_response(endpoint=endpoint, params=params)
-        print(response.text)
         print("test")
-        data = response.json()
+        data = json.loads(response.content.decode("utf8"))
+        print(data)
         results = data.get("results", [])
         if not results:
             print("⚠️ No more results found. Stopping pagination.")
