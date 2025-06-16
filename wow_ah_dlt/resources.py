@@ -10,7 +10,7 @@ def _fetch_ids():
     params = {
         "namespace" : "dynamic-eu"
     }
-    response = auth_util.get_response(endpoint=endpoint, params=params)
+    response = auth_util.get_api_response(endpoint=endpoint, params=params)
     connected_realm_list = response.json()["connected_realms"]
     
     list_of_realm_ids = [x["href"].split("/")[-1].split("?")[0] for x in connected_realm_list]
@@ -28,7 +28,7 @@ def fetch_auction_house_items():
                 "{{connectedRealmId}}" : realm_id,
                 "namespace" : "dynamic-eu",
                 }
-            response = auth_util.get_response(endpoint=endpoint, params=params)
+            response = auth_util.get_api_response(endpoint=endpoint, params=params)
             response.raise_for_status()
             counter += 1 #DEBUG
             data = response.json()
@@ -47,7 +47,7 @@ def fetch_realm_data():
             "{{connectedRealmId}}" : realm_id,
             "namespace" : "dynamic-eu",
             }
-        response = auth_util.get_response(endpoint=endpoint, params=params)
+        response = auth_util.get_api_response(endpoint=endpoint, params=params)
         response.raise_for_status()
         data = response.json()
         yield data
@@ -60,7 +60,7 @@ def fetch_ah_commodities():
     pass
 
 
-@dlt.resource(table_name="wow_items", write_disposition="merge", primary_key="id")
+@dlt.resource(table_name="test", write_disposition="merge", primary_key="id")
 def fetch_items():
     endpoint = "/data/wow/search/item"
     params = {
@@ -68,17 +68,14 @@ def fetch_items():
         "namespace": "static-eu",
         "orderby": "id",
         "_page": 1,
-        #"item_class.name.en_US": "Armor",
-        #"item_subclass.name.en_US": "Leather",
-        #"quality.name.en_US": "Legendary",
-        "locale": "en_US",
+
     }
     page = 1
     while True:
         params["_page"] = page
         print(params["_page"])
-        response = auth_util.get_response(endpoint=endpoint, params=params)
-        print(response)
+        response = auth_util.get_api_response(endpoint=endpoint, params=params)
+        print(response.text)
         print("test")
         data = response.json()
         results = data.get("results", [])
@@ -104,7 +101,7 @@ def wow_ah_source():
     This is the source function that will be used in the pipeline.
     It returns all the resources that we want to run in the pipeline.
     """
-    return [fetch_items(),fetch_realm_data(), fetch_auction_house_items()]
+    return [fetch_items()]
 
 
 

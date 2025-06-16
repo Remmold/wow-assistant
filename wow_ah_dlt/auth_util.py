@@ -5,7 +5,7 @@ BASE_URL = "https://eu.api.blizzard.com"
 
 
 
-def get_client():
+def get_api_client():
     """
     Returns a RESTClient instance configured for the Blizzard API.
     """
@@ -20,11 +20,11 @@ def get_client():
         ),
     )
 
-def get_response(endpoint: str, params: dict = {}):
+def get_api_response(endpoint: str, params: dict = {}):
     """
     Makes a request to the Blizzard API and returns the response.
     """
-    client = get_client()
+    client = get_api_client()
     response = client.get(path=endpoint, params=params)
     response.raise_for_status()  # Ensure we raise an error for bad responses
     return response
