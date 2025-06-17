@@ -193,3 +193,14 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# DuckDB
+*.duckdb
+*.db
+*.wal
+
+# DLT
+*.dlt
+
+# Other
+*test.py
