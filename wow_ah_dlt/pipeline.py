@@ -1,5 +1,5 @@
 import dlt
-from resources import wow_ah_source
+from resources import wow_api_source
 
 def run_pipeline():
     pipeline = dlt.pipeline(
@@ -8,7 +8,7 @@ def run_pipeline():
     dataset_name="raw",  # The name of the dataset
     progress="alive_progress"
     )
-    load_info = pipeline.run(wow_ah_source())
+    load_info = pipeline.run(wow_api_source())
     print(load_info)
 
 if __name__ == "__main__":

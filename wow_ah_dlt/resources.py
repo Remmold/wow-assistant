@@ -2,7 +2,7 @@ import dlt
 import auth_util
 import json
 
-# Fetch and bring all the connected realm ids cut out the id from url and put into a list
+# Fetch and bring all the connected realm IDs, returns a list of IDs
 def _fetch_ids():
     """
     Fetches all the connected realm ids and cut out the id from the url. THIS IS ONLY NECESARY LIKE ONES?? 
@@ -17,7 +17,24 @@ def _fetch_ids():
     list_of_realm_ids = [x["href"].split("/")[-1].split("?")[0] for x in connected_realm_list]
     return list_of_realm_ids
 
-# Fetch ah
+
+# Fetch data about connected realms    
+@dlt.resource(table_name="realm_data", write_disposition="replace")
+def fetch_realm_data():
+    for realm_id in _fetch_ids():
+        endpoint = f"/data/wow/connected-realm/{realm_id}"
+        params = {                
+            "{{connectedRealmId}}" : realm_id,
+            "namespace" : "dynamic-eu",
+            }
+        response = auth_util.get_api_response(endpoint=endpoint, params=params)
+        response.raise_for_status()
+        data = response.json()
+        yield data
+        print(f"Yieldat connected realm {realm_id}!")
+
+
+# Fetch AH items
 @dlt.resource(table_name="auctions", write_disposition="replace")
 def fetch_auction_house_items():
     counter = 0 #DEBUG
@@ -40,23 +57,8 @@ def fetch_auction_house_items():
             print(f"DENNA MISSLYCKADES nr{counter} realm id: {realm_id}")
         print(f"\nYIELDAT NR {counter} <-------------------\n") #DEBUG
 
-# Fetch connected realm data    
-@dlt.resource(table_name="realm_data", write_disposition="replace")
-def fetch_realm_data():
-    for realm_id in _fetch_ids():
-        endpoint = f"/data/wow/connected-realm/{realm_id}"
-        params = {                
-            "{{connectedRealmId}}" : realm_id,
-            "namespace" : "dynamic-eu",
-            }
-        response = auth_util.get_api_response(endpoint=endpoint, params=params)
-        response.raise_for_status()
-        data = response.json()
-        yield data
-        print(f"Yieldat connected realm {realm_id}!")
 
-
-# Fetch ah commodities
+# Fetch AH commodities
 @dlt.resource(table_name="commodities", write_disposition="replace") # merge?
 def fetch_ah_commodities():
     endpoint = f"/data/wow/auctions/commodities"                             
@@ -67,7 +69,7 @@ def fetch_ah_commodities():
     data = response.json()
     for auction in data["auctions"]:
         yield auction
-        
+
 
 # Returns a list of indexes for item classes
 def fetch_item_classes(): 
@@ -83,6 +85,7 @@ def fetch_item_classes():
         item_class_ids.append(id["id"])
     return item_class_ids
 
+# Returns a dictionary of indexes for item subclasses
 def fetch_item_subclasses():
     item_class_ids = fetch_item_classes()
     subclass_dict = {}
@@ -101,23 +104,23 @@ def fetch_item_subclasses():
         subclass_dict[item_class_id] = subclass_ids
 
         print(f"Item class {item_class_id} has subclasses: {subclass_ids}")
-
     return subclass_dict
 
 
+# Return all items, one rarity, class and subclass at a time
 @dlt.resource(table_name="items", write_disposition="merge", primary_key="id")
 def fetch_items():
     subclass_dict = fetch_item_subclasses()
     all_items = []
     rarities = [
-        "poor",        # gray
-        "common",      # white
-        "uncommon",    # green
-        "rare",        # blue
-        "epic",        # purple
-        "legendary",   # orange
-        "artifact",    # gold
-        "heirloom"     # light gold
+        "Poor",        # Gray
+        "Common",      # White
+        "Uncommon",    # Green
+        "Rare",        # Blue
+        "Epic",        # Purple
+        "Legendary",   # Orange
+        "Artifact",    # Gold
+        "Heirloom"     # Light Gold
     ]
 
     for item_class_id, subclass_ids in subclass_dict.items():
@@ -158,8 +161,8 @@ def fetch_items():
 
 
 # @dlt.source that we use in pipeline.run instead of @dlt.resource we use all the resources we want to run in the pipeline
-@dlt.source(name="wow_ah")
-def wow_ah_source():
+@dlt.source(name="wow_api_data")
+def wow_api_source():
     """
     This is the source function that will be used in the pipeline.
     It returns all the resources that we want to run in the pipeline.
