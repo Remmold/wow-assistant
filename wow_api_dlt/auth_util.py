@@ -9,14 +9,14 @@ def get_api_client():
     """
     Returns a RESTClient instance configured for the Blizzard API.
     """
-    client_id = dlt.secrets["wow_ah"]["client_id"]
-    client_secret = dlt.secrets["wow_ah"]["client_secret"]
+    client_id = dlt.secrets["wow_api"]["client_id"]
+    client_secret = dlt.secrets["wow_api"]["client_secret"]
     return RESTClient(
-        base_url=BASE_URL,
-        auth=OAuth2ClientCredentials(
-            client_id=client_id,
-            client_secret=client_secret,
-            access_token_url="https://oauth.battle.net/token",
+        base_url = BASE_URL,
+        auth = OAuth2ClientCredentials(
+            client_id = client_id,
+            client_secret = client_secret,
+            access_token_url = "https://oauth.battle.net/token",
         ),
     )
 
@@ -26,7 +26,7 @@ def get_api_response(endpoint: str, params: dict = {}):
     """
     client = get_api_client()
     response = client.get(path=endpoint, params=params)
-    response.raise_for_status()  # Ensure we raise an error for bad responses
+    response.raise_for_status() # Ensure we raise an error for bad responses
     return response
 
 if __name__ == "__main__":
