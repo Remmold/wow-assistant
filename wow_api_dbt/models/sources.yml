@@ -1,0 +1,7 @@
+version: 2
+
+sources:
+  - name: raw
+    tables:
+      - name: auctions
+      - name: items  # lägg till fler tabeller här om du vill
