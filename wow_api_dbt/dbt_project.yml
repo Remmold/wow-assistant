@@ -31,11 +31,13 @@ clean-targets:         # directories to be removed by `dbt clean`
 # files using the `{{ config(...) }}` macro.
 models:
   wow_api_dbt:
+    +materialized: view
     # Config indicated by + and applies to all files under models/example/
-    source:
-      +materialized: view
-    refined:
-      +materialized: view
+    src:
+      +schema: refined
+      
+    dim:
+      +schema: refined
     marts:
-      +materialized: table6
+      +schema: refined
     
