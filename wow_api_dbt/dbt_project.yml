@@ -33,6 +33,8 @@ models:
   wow_api_dbt:
     +materialized: view
     # Config indicated by + and applies to all files under models/example/
+
     refined:
+
       +schema: refined
     
