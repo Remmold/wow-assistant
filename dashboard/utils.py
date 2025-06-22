@@ -5,8 +5,9 @@ from pathlib import Path
 
 # Temporary (until database is on a server)
 working_directory = Path(__file__).resolve().parent.parent
+dbt_folder = "wow_api_dbt"
 db_filename = "wow_api_data.duckdb" # Database file name
-db_path = working_directory / db_filename # Full path to the database file
+db_path = working_directory / dbt_folder / db_filename # Full path to the database file
 
 # Function for fetching data from the database
 def fetch_data_from_db(query: str, params=None) -> pd.DataFrame:
