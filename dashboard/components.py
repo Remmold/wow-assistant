@@ -1,61 +1,81 @@
 import streamlit as st
-from .items import items_page
+from.utils import fetch_data_from_db
 
 # ---------- Constants ---------
 RARITY_LIST = ["Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary"]
 
-# ---------- Sidebar components ----------
+# ---------- Functions for filling sidebar component options ----------
 
-# Era (expansion) selection - SELECTBOX
-def era_selection():
-    era_list = ["Classic", "TBC", "WotLK", "Cataclysm", "MoP", "WoD", "Legion", "BfA", "SL", "DF", "TWW"]
-    era_full_list=[
-        "The Burning Crusade (2007)",
-        "Wrath of the Lich King (2008)",
-        "Cataclysm (2010)",
-        "Mists of Pandaria (2012)",
-        "Warlods of Draenor (2014)",
-        "Legion (2016)",
-        "Battle for Azeroth (2018)",
-        "Shadowlands (2020)",
-        "Dragonflight (2022)",
-        "The War Within (2024)"
-    ]
-    era = st.selectbox(
-        label = "Era (expansion):",
-        options = era_full_list,
-        key = "sidebar_era"
-    )
+# Function for getting realm list
+def _get_realm_groups_list():
+    query = f"""
+        SELECT
+            DISTINCT realm somethingsomethingsomething
+        FROM ?????
+    """
+    df = fetch_data_from_db(query)
+    return df["realm somethingsomethingsomething"].tolist() if not df.empty else []
+
+# Function for item class list
+def _get_item_class_list():
+    query = f"""
+        SELECT
+            DISTINCT item_class_name
+        FROM mart_filter
+    """
+    df = fetch_data_from_db(query)
+    return df["item_class_name"].tolist() if not df.empty else []
+
+# Function for item subclass list
+def _get_item_subclass_list(current_item_class):
+    # Build where clause based on item_class choice
+    if current_item_class == "All":
+        where_clause = ""
+    else:
+        where_clause = f"WHERE item_class_name == '{current_item_class}'"
+
+    query = f"""
+        SELECT
+            DISTINCT item_subclass_name
+        FROM mart_filter
+        {where_clause}
+    """
+    df = fetch_data_from_db(query)
+    return df["item_subclass_name"].tolist() if not df.empty else []
+
+
+# ---------- Sidebar components ----------
 
 # Region selection - SELECTBOX
 def region_selection():
-    region = st.selectbox(
+    st.selectbox(
         label = "Region:",
-        options = ["Europe", "Americas", "Asia"],
+        options = ["Europe"],
         key = "sidebar_region"
     )
 
-# Realm selection - MULTISELECT
-def realm_selection():
-    realms = st.multiselect(
-        label = "Realm(s):",
-        options = "",
-        key = "sidebar_realms"
+# Realm Group selection - MULTISELECT
+def realm_group_selection():
+    st.multiselect(
+        label = "Realm Group(s):",
+        options = ["All"] + _get_realm_groups_list(),
+        key = "sidebar_realm_groups"
     )
 
 # Item class (category) selection - SELECTBOX
 def item_class_selection():
-    item_class = st.selectbox(
+    st.selectbox(
         label = "Item Category:",
-        options = ["All", "Consumables", "Weapons", "Armor"],
+        options = ["All"] + _get_item_class_list(),
         key = "sidebar_item_class"
     )
 
 # Item subclass (subcategory) selection - MULTISELECT
 def item_subclass_selection():
-    item_subclass = st.multiselect(
+    current_item_class = st.session_state.get("sidebar_item_class")
+    st.multiselect(
         label = "Item Sub-category:",
-        options = "",
+        options = ["All"] + _get_item_subclass_list(current_item_class),
         key = "sidebar_item_subclass"
     )
 
@@ -102,7 +122,7 @@ def out_of_stock_checkbox():
 def only_below_vendor_price_checkbox():
     only_below_vendor_price = st.checkbox(
         "Only below vendor price",
-        help = "Only show auctions with posting price lower than vendor price.",
+        help = "Only show auctions with buyout price lower than vendor price.",
         key="sidebar_only_below_vendor_price"
     )
 
@@ -133,9 +153,8 @@ def items_page_filters():
 
 # Filters for page "Auction House"
 def auctions_page_filters():
-    era_selection()
     region_selection()
-    realm_selection()
+    realm_group_selection()
     item_class_selection()
     item_subclass_selection()
     item_rarity_range()
@@ -150,10 +169,17 @@ def main_section():
     # Checks the current page choice
     current_page = st.session_state.get("sidebar_page_selection")
 
+    # ----- ITEMS page -----
     if current_page == "Items":
+        from .items import items_page
         items_page()
+
+    # ----- AUCTION HOUSE page -----
     elif current_page == "Auction House":
-        st.header("Auction House")
+        from .auction_house import auction_house_page
+        auction_house_page()
+
+    # ----- REALMS page -----
     elif current_page == "Realms":
         st.header("Realms")
     else:
