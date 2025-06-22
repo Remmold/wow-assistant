@@ -173,7 +173,7 @@ Postconditions:
 ## Profiles.yml:
 > ⚠️ DBT is still not implemented, and it is not yet necessary to add this to your **profiles.yml**.
 ```yml
-wow_api:
+wow_api_dbt:
   outputs:
     dev:
       type: duckdb

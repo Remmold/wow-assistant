@@ -200,7 +200,7 @@ cython_debug/
 *.wal
 
 # DLT
-*.dlt
+secrets.toml
 
 # Other
 *test.py
