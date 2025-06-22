@@ -11,7 +11,7 @@ def _get_realm_groups_list():
     query = f"""
         SELECT
             DISTINCT realm somethingsomethingsomething
-        FROM ?????
+        FROM refined.mart_filter
     """
     df = fetch_data_from_db(query)
     return df["realm somethingsomethingsomething"].tolist() if not df.empty else []
@@ -21,7 +21,7 @@ def _get_item_class_list():
     query = f"""
         SELECT
             DISTINCT item_class_name
-        FROM mart_filter
+        FROM refined.mart_filter
     """
     df = fetch_data_from_db(query)
     return df["item_class_name"].tolist() if not df.empty else []
@@ -37,7 +37,7 @@ def _get_item_subclass_list(current_item_class):
     query = f"""
         SELECT
             DISTINCT item_subclass_name
-        FROM mart_filter
+        FROM refined.mart_filter
         {where_clause}
     """
     df = fetch_data_from_db(query)
@@ -58,7 +58,8 @@ def region_selection():
 def realm_group_selection():
     st.multiselect(
         label = "Realm Group(s):",
-        options = ["All"] + _get_realm_groups_list(),
+        options = "Khadgar",
+        # options = _get_realm_groups_list(),
         key = "sidebar_realm_groups"
     )
 
@@ -66,7 +67,8 @@ def realm_group_selection():
 def item_class_selection():
     st.selectbox(
         label = "Item Category:",
-        options = ["All"] + _get_item_class_list(),
+        options = "Weapon",
+        # options = ["All"] + _get_item_class_list(),
         key = "sidebar_item_class"
     )
 
@@ -75,7 +77,8 @@ def item_subclass_selection():
     current_item_class = st.session_state.get("sidebar_item_class")
     st.multiselect(
         label = "Item Sub-category:",
-        options = ["All"] + _get_item_subclass_list(current_item_class),
+        options = "Sub",
+        # options = _get_item_subclass_list(current_item_class),
         key = "sidebar_item_subclass"
     )
 
