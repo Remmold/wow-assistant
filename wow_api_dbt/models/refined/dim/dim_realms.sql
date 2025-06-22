@@ -2,7 +2,7 @@
 
 WITH connected_realms AS (
   SELECT 
-    realm_data.id AS connected_realm_id,
+    realm_data.id AS realm_group_id,
     rdr.id AS id,
     rdr.name__en_us AS name,
     rdr.category__en_us AS category,

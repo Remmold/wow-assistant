@@ -7,13 +7,10 @@ SELECT
   buyout,
   quantity,
   time_left,
-  item__context AS item_context,
-  item__pet_breed_id AS item_pet_breed_id,
-  item__pet_level AS item_pet_level,
-  item__pet_quality_id AS item_pet_quality_id,
-  item__pet_species_id AS item_pet_species,
-  _dlt_load_id,
-  _dlt_id,
-  realm_id
+  item__pet_breed_id AS battlepet_breed_id,
+  item__pet_level AS battlepet_level,
+  item__pet_quality_id AS battlepet_quality_id,
+  item__pet_species_id AS battlepet_species,
+  realm_id as realm_group_id,
 FROM {{ source('raw', 'auctions') }}
 
