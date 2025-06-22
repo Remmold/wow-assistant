@@ -7,21 +7,18 @@ def auction_house_page():
 
     filters = get_sidebar_filters()
     conditions = build_auctions_query_conditions(filters)
-    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    # where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    where_clause = ""
 
     auctions_query = f"""
         SELECT
             buyout,
             item_name,
             quantity
-        FROM mart_market
+        FROM refined.mart_market
         {where_clause}
         LIMIT 50
     """
-
-        # Part of query filtering
-        # WHERE class = '{filters["item_class"]}'
-        #     AND subclass IN ({filters["item_subclass"]})
 
     auctions_data = fetch_data_from_db(query=auctions_query)
 
