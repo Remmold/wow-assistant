@@ -1,5 +1,5 @@
 import dlt
-import auth_util
+from . import auth_util      # relativ import inom paketet
 import json
 
 # Fetch and bring all the connected realm IDs, returns a list of IDs

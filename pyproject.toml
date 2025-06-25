@@ -1,0 +1,3 @@
+[tool.dagster]
+module_name = "wow_dagster.wow_dagster.definitions"   # ← lägg till ett "wow_dagster"
+code_location_name = "wow_dagster"
