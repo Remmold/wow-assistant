@@ -22,10 +22,10 @@ my_pipeline = dlt.pipeline(
 @dlt_assets(
     dlt_source=wow_api_source(),
     dlt_pipeline=my_pipeline,
-    name="raw_ingest",
+    name="raw_wow_data",
     group_name="raw",
 )
-def raw_ingest_assets(
+def raw_wow_assets(
     context: AssetExecutionContext,
     dlt: DagsterDltResource,          
 ):
