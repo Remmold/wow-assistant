@@ -4,6 +4,7 @@ from pathlib import Path
 from dagster import AssetExecutionContext
 from dagster_dlt import dlt_assets, DagsterDltResource
 import dlt
+import dagster as dg
 
 from wow_api_dlt.pipeline import wow_api_source  
 
@@ -23,7 +24,8 @@ my_pipeline = dlt.pipeline(
     dlt_source=wow_api_source(),
     dlt_pipeline=my_pipeline,
     name="raw_wow_data",
-    group_name="raw",
+    #group_name="raw",
+    
 )
 def raw_wow_assets(
     context: AssetExecutionContext,
