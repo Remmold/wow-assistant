@@ -36,9 +36,13 @@ def fetch_realm_data():
 
 # Fetch AH items
 @dlt.resource(table_name="auctions", write_disposition="replace")
-def fetch_auction_house_items():
+def fetch_auction_house_items(test_mode=False):
     counter = 0 #DEBUG
-    for realm_id in _fetch_ids(): 
+    realm_ids = _fetch_ids() # Fetch all connected realm IDs once
+    if test_mode:
+        realm_ids = realm_ids[:3]
+
+    for realm_id in realm_ids:
         try:
             endpoint = f"/data/wow/connected-realm/{realm_id}/auctions"                             
             params = {                
