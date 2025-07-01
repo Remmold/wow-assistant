@@ -2,12 +2,12 @@ import dlt
 from .resources import wow_api_source
 
 DB_PATH = "wow_api_dbt/wow_api_data.duckdb"
-DB_TEST_PATH = "wow_api_dbt/test_wow_api_data.duckdb"
+
 
 def run_pipeline(sources = None, test_mode=False):
     pipeline = dlt.pipeline(
     pipeline_name="wow_api_data",  # The name of the pipeline for test mode
-    destination=dlt.destinations.duckdb(str(DB_TEST_PATH)),  # The destination where the data will be loaded
+    destination=dlt.destinations.duckdb(str(DB_PATH)),  # The destination where the data will be loaded
     dataset_name="raw",  # The name of the dataset for test mode
     progress="log"  # The progress reporting mode, can be "log", "console", or "none"
     )    
