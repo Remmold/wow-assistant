@@ -1,5 +1,5 @@
 import dlt
-import auth_util
+from wow_api_dlt import auth_util
 import json
 
 # Fetch and bring all the connected realm IDs, returns a list of IDs
@@ -55,8 +55,8 @@ def fetch_auction_house_items(test_mode=False):
             data = response.json()
             for auction in data["auctions"]:
                 auction["realm_id"] = realm_id
-                #yield auction # Detta tar rad för rad så i varje connected realm, så yieldar man istället rad för rad istället för alla cirka 30-50 k rader
-                yield data["auctions"] # Detta blir batchar man yieldar med 30 k rader svårt för dlt att behandla
+                yield auction # Detta tar rad för rad så i varje connected realm, så yieldar man istället rad för rad istället för alla cirka 30-50 k rader
+                #yield data["auctions"] # Detta blir batchar man yieldar med 30 k rader svårt för dlt att behandla
         except Exception as e:
             print(f"DENNA MISSLYCKADES nr{counter} realm id: {realm_id}")
         print(f"\nYIELDAT NR {counter} <-------------------\n") #DEBUG
@@ -168,7 +168,7 @@ def fetch_items():
 """If you want to use a source specific override for the pipeline you can add a list of resources to pick specific runs.
 accepted values are "auctions", "items" and "realm_data". If no list is provided, it will run all resources."""
 @dlt.source(name="wow_api_data")
-def wow_api_source(optional_source_list=None):
+def wow_api_source(optional_source_list=None,test_mode=False):
     """
     This is the source function that will be used in the pipeline.
     It returns all the resources that we want to run in the pipeline.
@@ -177,7 +177,7 @@ def wow_api_source(optional_source_list=None):
         # If an optional source dictionary is provided, we use it to pick resources
         method_list = []
         if "auctions" in optional_source_list:
-            method_list.append(fetch_auction_house_items())
+            method_list.append(fetch_auction_house_items(test_mode=test_mode))
             method_list.append(fetch_ah_commodities())
         if "items" in optional_source_list:
             method_list.append(fetch_items())
