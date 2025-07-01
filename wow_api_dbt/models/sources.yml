@@ -7,3 +7,4 @@ sources:
       - name: items  # lägg till fler tabeller här om du vill
       - name: realm_data
       - name: realm_data__realms
+      - name: item_media
