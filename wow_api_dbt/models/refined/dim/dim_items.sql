@@ -17,4 +17,7 @@ SELECT
     is_stackable,
     max_count AS max_stack_size,
     media__id AS media_id,
-FROM {{ source('raw', 'items') }}
+    m.url as icon_hrf
+FROM {{ source('raw', 'items') }} AS i
+LEFT JOIN {{ source('raw', 'item_media') }} AS m ON i.media__id = m.media_id
+
