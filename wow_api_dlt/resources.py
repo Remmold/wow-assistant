@@ -1,5 +1,5 @@
 import dlt
-from wow_api_dlt import auth_util
+from wow_api_dlt import auth_util,db
 import json
 
 # Fetch and bring all the connected realm IDs, returns a list of IDs
@@ -110,6 +110,54 @@ def fetch_item_subclasses():
         print(f"Item class {item_class_id} has subclasses: {subclass_ids}")
     return subclass_dict
 
+@dlt.resource(table_name="item_media", write_disposition="replace")
+def fetch_media_hrfs():
+    db_path = "wow_api_dbt/wow_api_data.duckdb"
+    
+    with db.DuckDBConnection(db_path) as db_handler:
+        df = db_handler.query("SELECT DISTINCT media_id FROM refined.dim_items WHERE media_id IS NOT NULL")
+        # df = df[:100] # For testing purposes, limit to 100 rows
+    amount_of_media = len(df)
+    current_media = 0
+    for _, row in df.iterrows():
+        try:
+            media_id = int(row["media_id"])
+        except (ValueError, TypeError):
+            print(f"Skipping invalid media_id: {row['media_id']}")
+            continue
+
+        endpoint = f"/data/wow/media/item/{media_id}"
+        params = {"namespace": "static-eu"}
+
+        try:
+            response = auth_util.get_api_response(endpoint=endpoint, params=params)
+            data = response.json()
+        except Exception as e:
+            print(f"Failed to fetch or parse media {media_id}: {e}")
+            continue
+
+        assets = data.get("assets", [])
+        if not isinstance(assets, list):
+            print(f"Invalid assets format for media {media_id}")
+            continue
+
+        for asset in assets:
+            if asset.get("key") == "icon":
+                url = asset.get("value")
+                if isinstance(url, str) and url.startswith("http"):
+                    yield {
+                        "media_id": media_id,
+                        "url": url
+                    }
+                    current_media += 1
+                    if current_media >= amount_of_media:
+                        break
+                else:
+                    print(f"Invalid or missing URL for media {media_id}")
+        print(f"Current media count: {current_media}/{amount_of_media}: {url}")
+
+
+
 
 # Return all items, one rarity, class and subclass at a time
 @dlt.resource(table_name="items", write_disposition="merge", primary_key="id")
@@ -185,8 +233,9 @@ def wow_api_source(optional_source_list=None,test_mode=False):
             method_list.append(fetch_realm_data())
         return method_list
     else:
-        return [fetch_auction_house_items(),fetch_ah_commodities(),fetch_items(),fetch_realm_data()]
+        #return [fetch_auction_house_items(),fetch_ah_commodities(),fetch_items(),fetch_realm_data()] 
+        return [fetch_media_hrfs()] # # For testing purposes, we only run the media fetch resource
 
 if __name__ == "__main__":
-    fetch_ah_commodities()
+    fetch_media_hrfs()
 
