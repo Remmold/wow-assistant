@@ -1,5 +1,5 @@
 import dlt
-import auth_util
+from wow_api_dlt import auth_util
 import json
 
 # Fetch and bring all the connected realm IDs, returns a list of IDs
@@ -36,9 +36,13 @@ def fetch_realm_data():
 
 # Fetch AH items
 @dlt.resource(table_name="auctions", write_disposition="replace")
-def fetch_auction_house_items():
+def fetch_auction_house_items(test_mode=False):
     counter = 0 #DEBUG
-    for realm_id in _fetch_ids(): 
+    realm_ids = _fetch_ids() # Fetch all connected realm IDs once
+    if test_mode:
+        realm_ids = realm_ids[:3]
+
+    for realm_id in realm_ids:
         try:
             endpoint = f"/data/wow/connected-realm/{realm_id}/auctions"                             
             params = {                
@@ -52,7 +56,7 @@ def fetch_auction_house_items():
             for auction in data["auctions"]:
                 auction["realm_id"] = realm_id
                 yield auction # Detta tar rad för rad så i varje connected realm, så yieldar man istället rad för rad istället för alla cirka 30-50 k rader
-            # yield data["auctions"] < Detta blir batchar man yieldar med 30 k rader svårt för dlt att behandla
+                #yield data["auctions"] # Detta blir batchar man yieldar med 30 k rader svårt för dlt att behandla
         except Exception as e:
             print(f"DENNA MISSLYCKADES nr{counter} realm id: {realm_id}")
         print(f"\nYIELDAT NR {counter} <-------------------\n") #DEBUG
@@ -161,14 +165,27 @@ def fetch_items():
 
 
 # @dlt.source that we use in pipeline.run instead of @dlt.resource we use all the resources we want to run in the pipeline
+"""If you want to use a source specific override for the pipeline you can add a list of resources to pick specific runs.
+accepted values are "auctions", "items" and "realm_data". If no list is provided, it will run all resources."""
 @dlt.source(name="wow_api_data")
-def wow_api_source():
+def wow_api_source(optional_source_list=None,test_mode=False):
     """
     This is the source function that will be used in the pipeline.
     It returns all the resources that we want to run in the pipeline.
     """
-    return [fetch_items(),fetch_auction_house_items(),fetch_ah_commodities(),fetch_realm_data()]
-
+    if optional_source_list is not None:
+        # If an optional source dictionary is provided, we use it to pick resources
+        method_list = []
+        if "auctions" in optional_source_list:
+            method_list.append(fetch_auction_house_items(test_mode=test_mode))
+            method_list.append(fetch_ah_commodities())
+        if "items" in optional_source_list:
+            method_list.append(fetch_items())
+        if "realm_data" in optional_source_list:
+            method_list.append(fetch_realm_data())
+        return method_list
+    else:
+        return [fetch_auction_house_items(),fetch_ah_commodities(),fetch_items(),fetch_realm_data()]
 
 if __name__ == "__main__":
     fetch_ah_commodities()
