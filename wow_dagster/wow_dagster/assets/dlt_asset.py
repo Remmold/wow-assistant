@@ -2,7 +2,7 @@
 from pathlib import Path
 
 from dagster import AssetExecutionContext
-from dagster_dlt import dlt_assets, DagsterDltResource
+from dagster_dlt import dlt_assets, DagsterDltResource, DagsterDltTranslator
 import dlt
 import dagster as dg
 
@@ -24,8 +24,6 @@ my_pipeline = dlt.pipeline(
     dlt_source=wow_api_source(),
     dlt_pipeline=my_pipeline,
     name="raw_wow_data",
-    #group_name="raw",
-    
 )
 def raw_wow_assets(
     context: AssetExecutionContext,
@@ -33,3 +31,4 @@ def raw_wow_assets(
 ):
     """Kör DLT-hämtningen när du själv triggar den."""
     yield from dlt.run(context=context)
+

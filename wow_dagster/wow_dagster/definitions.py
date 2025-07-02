@@ -9,6 +9,8 @@ from .assets.dlt_asset import raw_wow_assets
 from .resources.dbt_resource import dbt_resource     
 from .assets.dbt_assets import wow_dbt_assets        
 
+from .schedules import daily_schedule
+
 # Define the assets and resources for the Dagster Definitions
 # This is where we define the assets and resources that will be used in the Dagster pipeline
 defs = Definitions(
@@ -20,5 +22,6 @@ defs = Definitions(
         "dlt": dlt_resource,   # DLT resource for data ingestion DagsterDltResource
         "dbt": dbt_resource,   # DBT resource for data transformation
     },
+    schedules=[daily_schedule]
     
 )
