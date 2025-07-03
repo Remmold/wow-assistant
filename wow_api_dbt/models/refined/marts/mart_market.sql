@@ -25,6 +25,7 @@ WITH mart_market AS (
 		da.battlepet_level,
 		da.battlepet_quality_id,
 		da.battlepet_species,
+		di.icon_hrf AS icon_href
 FROM {{ref('fct_market')}} AS fm
 
 LEFT JOIN {{ref(('dim_auctions'))}} AS da
