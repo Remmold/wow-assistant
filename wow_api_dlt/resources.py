@@ -274,8 +274,8 @@ def wow_api_source(optional_source_list=None,test_mode=False):
             method_list.append(fetch_realm_data())
         return method_list
     else:
-        return [fetch_item_details()] 
-        #return [fetch_media_hrfs(),fetch_ah_commodities(),fetch_auction_house_items(),fetch_items(),fetch_realm_data(),fetch_item_details()] # # For testing purposes, we only run the media fetch resource
+        #return [fetch_item_details()] 
+        return [fetch_media_hrfs(),fetch_ah_commodities(),fetch_auction_house_items(),fetch_items(),fetch_realm_data(),fetch_item_details()] # # For testing purposes, we only run the media fetch resource
 
 if __name__ == "__main__":
     fetch_item_details()
