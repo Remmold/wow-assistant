@@ -14,5 +14,5 @@ daily_refresh_job = dg.define_asset_job(
 
 daily_schedule = dg.ScheduleDefinition(
     job=daily_refresh_job,
-    cron_schedule="0 * * * *", # Every hour  
+    cron_schedule="0 */2 * * *", # Every second hour  
 )
