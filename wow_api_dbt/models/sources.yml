@@ -8,3 +8,6 @@ sources:
       - name: realm_data
       - name: realm_data__realms
       - name: item_media
+
+      - name: item_details
+      - name: item_details__preview_item__stats
