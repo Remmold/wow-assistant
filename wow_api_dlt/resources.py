@@ -1,6 +1,7 @@
 import dlt
 from wow_api_dlt import auth_util,db
 import json
+import pandas as pd
 
 # Fetch and bring all the connected realm IDs, returns a list of IDs
 def _fetch_ids():
@@ -85,7 +86,6 @@ def fetch_item_classes():
     response = auth_util.get_api_response(endpoint=endpoint, params=params)
     data = response.json()
     for id in data.get("item_classes", []):
-        print(id["id"])
         item_class_ids.append(id["id"])
     return item_class_ids
 
@@ -157,7 +157,48 @@ def fetch_media_hrfs():
         print(f"Current media count: {current_media}/{amount_of_media}: {url}")
 
 
+@dlt.resource(table_name="item_details", write_disposition="replace")
+def fetch_item_details():
+    db_path = "wow_api_dbt/wow_api_data.duckdb"
+    subclass_dict = fetch_item_subclasses()
+    for item_class_id, subclass_ids in subclass_dict.items():
+        for subclass_id in subclass_ids:
+            with db.DuckDBConnection(db_path) as db_handler:
+                df = db_handler.query(f"SELECT DISTINCT id FROM refined.dim_items where item_class_id = {item_class_id} and item_subclass_id = {subclass_id}")
+                df = df[:1] # For testing purposes, limit to 1 row
+            amount_of_details = len(df)
+            current_details = 0
+            for _, row in df.iterrows():
+                item_id = int(row["id"])
+                endpoint = f"/data/wow/item/{item_id}"
+                params = {"namespace": "static-eu"}
+                return_frame = pd.DataFrame()
 
+                try:
+                    response = auth_util.get_api_response(endpoint=endpoint, params=params)
+                    data = response.json()
+                    return_frame["id"] = [data.get("id")]
+                    if "description" in data:
+                        return_frame["description"] = [data.get("description", {}).get("en_US")]
+                    if "binding" in data:
+                        return_frame["binding_name"] = [data.get("binding", {}).get("name",{})]
+                    if "item_preview" in data:
+                        return_frame["item_preview"] = [data.get("item_preview", {})]
+                except Exception as e:
+                    print(f"Failed to fetch or parse item {item_id}: {e}")
+                    continue
+
+                if not isinstance(data, dict) or "id" not in data:
+                    print(f"Invalid data format for item {item_id}")
+                    continue
+
+                #yield return_frame
+                yield data
+                current_details += 1
+                if current_details >= amount_of_details:
+                    break
+                print(f"Current item details count: {current_details}/{amount_of_details} for item ID: {item_id}")
+       
 
 # Return all items, one rarity, class and subclass at a time
 @dlt.resource(table_name="items", write_disposition="merge", primary_key="id")
@@ -233,9 +274,9 @@ def wow_api_source(optional_source_list=None,test_mode=False):
             method_list.append(fetch_realm_data())
         return method_list
     else:
-        #return [fetch_auction_house_items(),fetch_ah_commodities(),fetch_items(),fetch_realm_data()] 
-        return [fetch_media_hrfs(),fetch_ah_commodities(),fetch_auction_house_items(),fetch_items(),fetch_realm_data()] # # For testing purposes, we only run the media fetch resource
+        #return [fetch_item_details()] 
+        return [fetch_media_hrfs(),fetch_ah_commodities(),fetch_auction_house_items(),fetch_items(),fetch_realm_data(),fetch_item_details()] # # For testing purposes, we only run the media fetch resource
 
 if __name__ == "__main__":
-    fetch_media_hrfs()
+    fetch_item_details()
 
