@@ -1,14 +1,25 @@
 import streamlit as st
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 from .utils import fetch_data_from_db, get_sidebar_filters, build_auctions_query_conditions, render_active_filters
-from .helpers import format_wow_currency, format_time_left
+from .helpers import get_rarity_color, format_auction_listings, format_wow_currency
+from .main_components import render_item_details
+from .sidebar_components import free_text_search
 
 # ---------- Items Page ----------
 def auction_house_page():
     st.title("Auction House")
 
-    filters = get_sidebar_filters()
-    render_active_filters(filters)
+    search_column, filters_column = st.columns([0.35, 0.65])
+
+    with search_column:
+        free_text_search()
+    
+    with filters_column:
+        st.markdown("<div style='height: 1.75em'></div>", unsafe_allow_html=True)
+        filters = get_sidebar_filters()
+        render_active_filters(filters)
+
+    # Build conditions + clause based on current filters
     conditions = build_auctions_query_conditions(filters)
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
@@ -23,7 +34,8 @@ def auction_house_page():
             MAX(rarity_name) AS rarity_name,
             MAX(item_level) AS item_level,
             MAX(required_level) AS required_level,
-            COUNT(*) AS auction_count,
+            MAX(icon_href) AS icon_href,
+            COUNT(DISTINCT auction_id) AS auction_count,
             MIN(buyout) AS min_buyout,
             MAX(buyout) AS max_buyout
         FROM refined.mart_market
@@ -33,36 +45,11 @@ def auction_house_page():
     """
     auctions_data = fetch_data_from_db(query=auctions_query)
 
-    # Generate icon URLs (using placeholder for now)
-    auctions_data["icon"] = "https://wow.zamimg.com/images/wow/icons/large/inv_potion_51.jpg"
-
-    # Icon url
-    # auctions_data["icon"] = auctions_data["media_id"].apply(
-    #     lambda x: f"https://wow.zamimg.com/images/wow/icons/large/{x}.jpg" if x else "https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg"
-    # )
-
-    # Ensure icon is str
-    #auctions_data["icon"] = auctions_data["icon"].astype(str)
-
-    # Ensure item_id is int
-    #auctions_data["item_id"] = auctions_data["item_id"].astype(int)
-
-    # Rarity color mapping
-    rarity_colors = {
-        "Poor": "#9d9d9d",
-        "Common": "#ffffff",
-        "Uncommon": "#1eff00",
-        "Rare": "#0070dd",
-        "Epic": "#a335ee",
-        "Legendary": "#ff8000",
-        "Artifact": "#e6cc80",
-        "Heirloom": "#00ccff",
-        "Heirloom Artifact": "#00ccff",
-        "Wow Token": "#ffd700"
-    }
+    # Use icon_href directly, with fallback if missing
+    auctions_data["icon_href"] = auctions_data["icon_href"].fillna("https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg")
 
     # Add rarity color to dataframe
-    auctions_data["rarity_color"] = auctions_data["rarity_name"].map(rarity_colors)
+    auctions_data["rarity_color"] = auctions_data["rarity_name"].map(get_rarity_color)
 
     # Results column + details column (50/50%)
     col_results, col_auction_details, col_item_details = st.columns([0.35, 0.25, 0.4])
@@ -72,23 +59,29 @@ def auction_house_page():
         with st.container(border=True):
             st.subheader("Auctions")
             if not auctions_data.empty:
-                # Use ALL data
                 all_display_data = auctions_data[[
-                    "icon", "item_name", "min_buyout", "auction_count", 
+                    "icon_href", "item_name", "min_buyout", "auction_count", 
                     "item_id", "rarity_color", "rarity_name"
                 ]].copy()
-                
+                all_display_data["Price_Formatted"] = all_display_data["min_buyout"].apply(format_wow_currency)
+                all_display_data["price_color"] = "#FFD700"
+
+                all_display_data = all_display_data[[
+                    "icon_href", "item_name", "Price_Formatted", "auction_count", 
+                    "item_id", "rarity_color", "rarity_name", "price_color"
+                ]]
+
                 gb = GridOptionsBuilder.from_dataframe(all_display_data)
                 gb.configure_selection('single', use_checkbox=False)
 
                 # Hide unnecessary columns
-                for col in ["item_id", "rarity_color", "rarity_name"]:
+                for col in ["item_id", "rarity_color", "rarity_name", "price_color"]:
                     gb.configure_column(col, hide=True)
 
                 # Configure visible columns
-                gb.configure_column("icon", header_name="", width=56, pinned="left")
+                gb.configure_column("icon_href", header_name="", width=56, pinned="left")
                 gb.configure_column("item_name", header_name="Item name", width=280)
-                gb.configure_column("min_buyout", header_name="Price", width=120, type=["numericColumn"])
+                gb.configure_column("Price_Formatted", header_name="Price", width=120)
                 gb.configure_column("auction_count", header_name="Posted", width=120, type=["numericColumn"])
 
                 # Pagination config
@@ -127,6 +120,12 @@ def auction_house_page():
                 }
                 """)
 
+                price_style = JsCode("""
+                    function(params) {
+                        return {color: params.data.price_color || "#FFD700", fontWeight: "bold"};
+                    }
+                """)
+
                 # Build rarity text color style and assign it dynamically
                 rarity_name_style = JsCode("""
                     function(params) {
@@ -139,11 +138,13 @@ def auction_house_page():
 
                 # Apply custom renders
                 for col in grid_options["columnDefs"]:
-                    if col["field"] == "icon":
+                    if col["field"] == "icon_href":
                         col["cellRenderer"] = icon_renderer
                         col["sortable"] = False
                     elif col["field"] == "item_name":
                         col["cellStyle"] = rarity_name_style
+                    elif col["field"] == "Price_Formatted":
+                        col["cellStyle"] = price_style
 
                 # The grid
                 grid_response = AgGrid(
@@ -193,30 +194,7 @@ def auction_house_page():
                 
                 if not auctions_for_item.empty:
                     # Format the data for better display
-                    auctions_display = auctions_for_item.copy()
-                    
-                    # Format currency
-                    auctions_display["Price_Formatted"] = auctions_display["Price"].apply(format_wow_currency)
-                    
-                    # Format time left
-                    auctions_display["Time_Left_Formatted"] = auctions_display["Time left"].apply(format_time_left)
-                    
-                    # Add color data for styling
-                    auctions_display["price_color"] = "#FFD700"  # Gold color for all prices
-                    
-                    # Add time-based colors
-                    def get_time_color(time_left_formatted):
-                        if "0 - 2h" in time_left_formatted:
-                            return "#ff4444"  # Red
-                        elif "2 - 12h" in time_left_formatted:
-                            return "#ffaa00"  # Orange
-                        elif "12 - 24h" in time_left_formatted and "Very" not in time_left_formatted:
-                            return "#44ff44"  # Green
-                        elif "24 - 48h" in time_left_formatted:
-                            return "#4444ff"  # Blue
-                        return "#ffffff"  # Default white
-                    
-                    auctions_display["time_color"] = auctions_display["Time_Left_Formatted"].apply(get_time_color)
+                    auctions_display = format_auction_listings(auctions_for_item)
                     
                     # Prepare data for AgGrid
                     auction_grid_data = auctions_display[[
@@ -301,7 +279,7 @@ def auction_house_page():
             else:
                 selected_id = None
 
-            auction = None
+            item = None
 
             # Query the database with the selected auction (if selected)
             if selected_id is not None:
@@ -313,89 +291,10 @@ def auction_house_page():
                 """
                 details_df = fetch_data_from_db(details_query)
                 if not details_df.empty:
-                    auction = details_df.iloc[0].to_dict()
+                    item = details_df.iloc[0].to_dict()
 
-            # If an auction is selected in the results dataframe
-            if auction:
-                # Item detail variables
-                item_name = auction.get("item_name")
-                item_class = auction.get("item_class_name")
-                item_subclass = auction.get("item_subclass_name")
-                item_ilvl = auction.get("item_level")
-                item_req_lvl = auction.get("required_level")
-
-                # Retrieve item rarity and assign color to variable
-                rarity = auction.get("rarity_name", "Common")
-                color = rarity_colors.get(rarity, "#ffffff") # Defaults to white
-                
-                # ---------- Item details layout ----------
-                image_col, name_col = st.columns([0.08, 0.92])
-
-                # Image column (10% width)
-                with image_col:
-                    image_url = auction.get("icon", "https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg")
-                    st.image(
-                        image = image_url,
-                        width = 56
-                    )
-
-                # Item details column (90% width)
-                with name_col:
-                    # Layout/details
-                    st.header(f"{item_name}")
-
-                rarity_col, class_col, subclass_col, ilvl_col, reqlvl_col = st.columns([0.2, 0.2, 0.3, 0.15, 0.15])
-
-                # Rarity
-                with rarity_col:
-                    with st.container(border=True):
-                        st.markdown(
-                            f"<span style='background:{color};color:#222;padding:6px 18px;border-radius:16px;font-weight:bold;font-size:1em;'>{rarity}</span> ",
-                            unsafe_allow_html=True
-                        )
-
-                # Class
-                with class_col:
-                    with st.container(border=True):
-                        st.markdown(f"<span style='font-size:1em;'>Category: {item_class}</span>", unsafe_allow_html=True)
-
-                # Subclass
-                with subclass_col:
-                    with st.container(border=True):
-                        st.markdown(f"<span style='font-size:1em;'>Sub-category: {item_subclass}</span>", unsafe_allow_html=True)
-
-                # Item level
-                with ilvl_col:
-                    with st.container(border=True):
-                        st.markdown(f"<span style='font-size:1em;'>iLevel: {item_ilvl}</span>", unsafe_allow_html=True)
-
-                # Required level
-                with reqlvl_col:
-                    with st.container(border=True):
-                        st.markdown(f"<span style='font-size:1em;'>Req. level: {item_req_lvl}</span>", unsafe_allow_html=True)
-                
-                stats_col, description_col = st.columns([0.5, 0.5])
-
-                # Details column (left)
-                with stats_col:
-                    with st.container(border=True):
-                        st.subheader("Stats:")
-                        st.markdown("Stats will go here")
-
-                # Description column (right)
-                with description_col:
-                    with st.container(border=True):
-                        st.subheader("Description:")
-                        # Placeholder description
-                        item_description = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nulla vitae ipsum pharetra metus mollis gravida. Etiam vestibulum augue egestas aliquet efficitur. Pellentesque placerat odio quis lacinia elementum."
-                        st.markdown(item_description)
-
-                # Code for later
-                # media_id = item.get("media_id")
-                # if media_id:
-                #     img_url = f"https://wow.zamimg.com/images/wow/icons/large/{media_id}.jpg"
-                # else:
-                #     img_url = "https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg"
-                # st.image(img_url, caption="Item image", width=96)
+            # If an auctioned item is selected in the results dataframe
+            if item:
+                render_item_details(item)
             else:
                 st.info("Select an item to see item details.")

@@ -1,13 +1,24 @@
 import streamlit as st
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 from .utils import fetch_data_from_db, get_sidebar_filters, build_items_query_conditions, render_active_filters
+from .main_components import render_item_details
+from .sidebar_components import free_text_search
 
 # ---------- Items Page ----------
 def items_page():
     st.title("Item Database")
 
-    filters = get_sidebar_filters()
-    render_active_filters(filters)
+    search_column, filters_column = st.columns([0.35, 0.65])
+
+    with search_column:
+        free_text_search()
+    
+    with filters_column:
+        st.markdown("<div style='height: 1.75em'></div>", unsafe_allow_html=True)
+        filters = get_sidebar_filters()
+        render_active_filters(filters)
+
+    # Build conditions + clause based on current filters
     conditions = build_items_query_conditions(filters)
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
@@ -19,7 +30,7 @@ def items_page():
             item_level,
             required_level,
             rarity_name,
-            media_id
+            icon_href
         FROM refined.mart_items
         {where_clause}
         ORDER BY item_name ASC, item_level DESC
@@ -27,13 +38,11 @@ def items_page():
     items_data = fetch_data_from_db(query=items_query)
 
     # Placeholder icon url
-    items_data["icon"] = "https://wow.zamimg.com/images/wow/icons/large/inv_potion_51.jpg"
+    # items_data["icon"] = "https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg"
 
     # Icon url
-    # items_data["icon"] = items_data["media_id"].apply(
-    #     lambda x: f"https://wow.zamimg.com/images/wow/icons/large/{x}.jpg" if x else "https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg"
-    # )
-    columns_to_show = ["id", "icon", "item_name", "item_level", "required_level", "rarity_name"]
+    items_data["icon_href"] = items_data["icon_href"].fillna("https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg")
+    columns_to_show = ["id", "icon_href", "item_name", "item_level", "required_level", "rarity_name"]
     items_data = items_data[columns_to_show]
 
     # Rarity color mapping
@@ -61,15 +70,16 @@ def items_page():
         if not items_data.empty:
             gb = GridOptionsBuilder.from_dataframe(items_data)
             gb.configure_selection('single', use_checkbox=False)
-            # gb.configure_column('id', hide=False) # Hide item id
+            gb.configure_column('id', hide=True) # Hide item id
+            gb.configure_column('rarity_color', hide=True) # Hide rarity_color hex code
             # Change column labels
-            gb.configure_column("id", header_name="ID", width=100) # To be removed later
+            # gb.configure_column("id", header_name="ID", width=100) # To be removed later
             gb.configure_column("item_name", header_name="Item name", width=280)
             gb.configure_column("item_level", header_name="iLvl", width=100)
             gb.configure_column("required_level", header_name="Req. lvl", width=100)
             gb.configure_column("rarity_name", header_name="Rarity", width=120)
             gb.configure_column(
-                "icon",
+                "icon_href",
                 header_name="Image",
                 cellRenderer="""
                     function(params) {
@@ -79,20 +89,60 @@ def items_page():
                 width=60,
                 pinned="left"
             )
-            gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
-            grid_options = gb.build()
-            grid_options["pagination"] = True
+
+            # Pagination config
+            gb.configure_pagination(
+                paginationAutoPageSize=False,
+                paginationPageSize=20
+            )
+            
+            # Icon renderer
+            icon_renderer = JsCode("""
+            class IconCellRenderer {
+                init(params) {
+                    this.eGui = document.createElement('div');
+                    this.eGui.style.display = 'flex';
+                    this.eGui.style.justifyContent = 'center';
+                    this.eGui.style.alignItems = 'center';
+                    this.eGui.style.height = '100%';
+                    
+                    const img = document.createElement('img');
+                    img.src = params.value || 'https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg';
+                    img.style.height = '32px';
+                    img.style.width = '32px';
+                    img.style.objectFit = 'contain';
+                    img.style.borderRadius = '4px';
+                    
+                    img.onerror = function() {
+                        this.src = 'https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg';
+                    };
+                    
+                    this.eGui.appendChild(img);
+                }
+                
+                getGui() {
+                    return this.eGui;
+                }
+            }
+            """)
 
             # Build rarity text color style and assign it dynamically
-            rarity_color_style = JsCode("""
+            rarity_name_style = JsCode("""
                 function(params) {
                     return {color: params.data.rarity_color || "#fff", fontWeight: "bold"};
                 }
             """)
 
+            grid_options = gb.build()
+            grid_options["pagination"] = True
+
+            # Apply custom renders
             for col in grid_options["columnDefs"]:
-                if col["field"] == "item_name":
-                    col["cellStyle"] = rarity_color_style
+                if col["field"] == "icon_href":
+                    col["cellRenderer"] = icon_renderer
+                    col["sortable"] = False
+                elif col["field"] == "item_name":
+                    col["cellStyle"] = rarity_name_style
 
             grid_response = AgGrid(
                 items_data,
@@ -138,99 +188,6 @@ def items_page():
 
             # If an item is selected in the results dataframe
             if item:
-                # Rarity color mapping
-                rarity_colors = {
-                    "Poor": "#9d9d9d",
-                    "Common": "#ffffff",
-                    "Uncommon": "#1eff00",
-                    "Rare": "#0070dd",
-                    "Epic": "#a335ee",
-                    "Legendary": "#ff8000",
-                    "Artifact": "#e6cc80",
-                    "Heirloom": "#00ccff",
-                    "Heirloom Artifact": "#00ccff",
-                    "Wow Token": "#ffd700"
-                }
-                
-                # Item detail variables
-                item_name = item.get("item_name")
-                item_class = item.get("item_class_name")
-                item_subclass = item.get("item_subclass_name")
-                item_ilvl = item.get("item_level")
-                item_req_lvl = item.get("required_level")
-
-                # Retrieve item rarity and assign color to variable
-                rarity = item.get("rarity_name", "Common")
-                color = rarity_colors.get(rarity, "#ffffff") # Defaults to white
-                
-                # ---------- Item details layout ----------
-                image_col, name_col = st.columns([0.08, 0.92])
-
-                # Image column (10% width)
-                with image_col:
-                    image_url = item.get("icon", "https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg")
-                    st.image(
-                        image = image_url,
-                        width = 56
-                    )
-
-                # Item details column (90% width)
-                with name_col:
-                    # Layout/details
-                    st.header(f"{item_name}")
-
-                rarity_col, class_col, subclass_col, ilvl_col, reqlvl_col = st.columns([0.2, 0.2, 0.3, 0.15, 0.15])
-
-                # Rarity
-                with rarity_col:
-                    with st.container(border=True):
-                        st.markdown(
-                            f"<span style='background:{color};color:#222;padding:6px 18px;border-radius:16px;font-weight:bold;font-size:1em;'>{rarity}</span> ",
-                            unsafe_allow_html=True
-                        )
-
-                # Class
-                with class_col:
-                    with st.container(border=True):
-                        st.markdown(f"<span style='font-size:1em;'>Category: {item_class}</span>", unsafe_allow_html=True)
-
-                # Subclass
-                with subclass_col:
-                    with st.container(border=True):
-                        st.markdown(f"<span style='font-size:1em;'>Sub-category: {item_subclass}</span>", unsafe_allow_html=True)
-
-                # Item level
-                with ilvl_col:
-                    with st.container(border=True):
-                        st.markdown(f"<span style='font-size:1em;'>iLevel: {item_ilvl}</span>", unsafe_allow_html=True)
-
-                # Required level
-                with reqlvl_col:
-                    with st.container(border=True):
-                        st.markdown(f"<span style='font-size:1em;'>Req. level: {item_req_lvl}</span>", unsafe_allow_html=True)
-                
-                stats_col, description_col = st.columns([0.5, 0.5])
-
-                # Details column (left)
-                with stats_col:
-                    with st.container(border=True):
-                        st.subheader("Stats:")
-                        st.markdown("Stats will go here")
-
-                # Description column (right)
-                with description_col:
-                    with st.container(border=True):
-                        st.subheader("Description:")
-                        # Placeholder description
-                        item_description = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nulla vitae ipsum pharetra metus mollis gravida. Etiam vestibulum augue egestas aliquet efficitur. Pellentesque placerat odio quis lacinia elementum."
-                        st.markdown(item_description)
-
-                # Code for later
-                # media_id = item.get("media_id")
-                # if media_id:
-                #     img_url = f"https://wow.zamimg.com/images/wow/icons/large/{media_id}.jpg"
-                # else:
-                #     img_url = "https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg"
-                # st.image(img_url, caption="Item image", width=96)
+                render_item_details(item)
             else:
                 st.info("Select an item in the results to see its details.")
