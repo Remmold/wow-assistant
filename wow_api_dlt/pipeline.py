@@ -1,7 +1,8 @@
 import dlt
-from .resources import wow_api_source
 
+from .resources import wow_api_source
 import os
+
 DB_PATH = os.path.abspath("wow_api_dbt/wow_api_data.duckdb")
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
