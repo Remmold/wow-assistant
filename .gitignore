@@ -204,3 +204,6 @@ secrets.toml
 
 # Other
 *test.py
+
+# Dagster
+*dagster_home

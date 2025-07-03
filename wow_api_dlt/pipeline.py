@@ -1,5 +1,7 @@
 import dlt
+
 from .resources import wow_api_source
+
 
 DB_PATH = "wow_api_dbt/wow_api_data.duckdb"
 

@@ -4,10 +4,27 @@ sources:
   - name: raw
     tables:
       - name: auctions
-      - name: items  # lägg till fler tabeller här om du vill
+        meta:
+          dagster:
+            asset_key: ["dlt_wow_api_data_fetch_auction_house_items"]
+      - name: items
+        meta:
+          dagster:
+            asset_key: ["dlt_wow_api_data_fetch_items"]
       - name: realm_data
+        meta:
+          dagster:
+            asset_key: ["dlt_wow_api_data_fetch_realm_data"]
       - name: realm_data__realms
+
+      - name: commodities
+        meta:
+          dagster:
+            asset_key: ["dlt_wow_api_data_fetch_ah_commodities"]
+
       - name: item_media
 
       - name: item_details
+      
       - name: item_details__preview_item__stats
+
