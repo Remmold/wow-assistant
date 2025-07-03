@@ -86,7 +86,6 @@ def fetch_item_classes():
     response = auth_util.get_api_response(endpoint=endpoint, params=params)
     data = response.json()
     for id in data.get("item_classes", []):
-        print(id["id"])
         item_class_ids.append(id["id"])
     return item_class_ids
 
@@ -161,42 +160,44 @@ def fetch_media_hrfs():
 @dlt.resource(table_name="item_details", write_disposition="replace")
 def fetch_item_details():
     db_path = "wow_api_dbt/wow_api_data.duckdb"
-    
-    with db.DuckDBConnection(db_path) as db_handler:
-        df = db_handler.query("SELECT DISTINCT id FROM refined.dim_items")
-        #df = df[:10] # For testing purposes, limit to 100 rows
-    amount_of_details = len(df)
-    current_details = 0
-    for _, row in df.iterrows():
-        item_id = int(row["id"])
-        endpoint = f"/data/wow/item/{item_id}"
-        params = {"namespace": "static-eu"}
-        return_frame = pd.DataFrame()
+    subclass_dict = fetch_item_subclasses()
+    for item_class_id, subclass_ids in subclass_dict.items():
+        for subclass_id in subclass_ids:
+            with db.DuckDBConnection(db_path) as db_handler:
+                df = db_handler.query(f"SELECT DISTINCT id FROM refined.dim_items where item_class_id = {item_class_id} and item_subclass_id = {subclass_id}")
+                df = df[:1] # For testing purposes, limit to 1 row
+            amount_of_details = len(df)
+            current_details = 0
+            for _, row in df.iterrows():
+                item_id = int(row["id"])
+                endpoint = f"/data/wow/item/{item_id}"
+                params = {"namespace": "static-eu"}
+                return_frame = pd.DataFrame()
 
-        try:
-            response = auth_util.get_api_response(endpoint=endpoint, params=params)
-            data = response.json()
-            return_frame["id"] = [data.get("id")]
-            if "description" in data:
-                return_frame["description"] = [data.get("description", {}).get("en_US")]
-            if "binding" in data:
-                return_frame["binding_name"] = [data.get("binding", {}).get("name",{})]
-            if "item_preview" in data:
-                return_frame["item_preview"] = [data.get("item_preview", {})]
-        except Exception as e:
-            print(f"Failed to fetch or parse item {item_id}: {e}")
-            continue
+                try:
+                    response = auth_util.get_api_response(endpoint=endpoint, params=params)
+                    data = response.json()
+                    return_frame["id"] = [data.get("id")]
+                    if "description" in data:
+                        return_frame["description"] = [data.get("description", {}).get("en_US")]
+                    if "binding" in data:
+                        return_frame["binding_name"] = [data.get("binding", {}).get("name",{})]
+                    if "item_preview" in data:
+                        return_frame["item_preview"] = [data.get("item_preview", {})]
+                except Exception as e:
+                    print(f"Failed to fetch or parse item {item_id}: {e}")
+                    continue
 
-        if not isinstance(data, dict) or "id" not in data:
-            print(f"Invalid data format for item {item_id}")
-            continue
+                if not isinstance(data, dict) or "id" not in data:
+                    print(f"Invalid data format for item {item_id}")
+                    continue
 
-        #yield return_frame
-        yield data
-        current_details += 1
-        if current_details >= amount_of_details:
-            break
-        print(f"Current item details count: {current_details}/{amount_of_details} for item ID: {item_id}")
+                #yield return_frame
+                yield data
+                current_details += 1
+                if current_details >= amount_of_details:
+                    break
+                print(f"Current item details count: {current_details}/{amount_of_details} for item ID: {item_id}")
        
 
 # Return all items, one rarity, class and subclass at a time
