@@ -1,8 +1,9 @@
 import dlt
 from .resources import wow_api_source
 
-DB_PATH = "wow_api_dbt/wow_api_data.duckdb"
-
+import os
+DB_PATH = os.path.abspath("wow_api_dbt/wow_api_data.duckdb")
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
 def run_pipeline(sources = None, test_mode=False):
     pipeline = dlt.pipeline(
