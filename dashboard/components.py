@@ -2,7 +2,7 @@ import streamlit as st
 from.utils import fetch_data_from_db
 
 # ---------- Constants ---------
-RARITY_LIST = ["Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary"]
+RARITY_LIST = ["Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Artifact", "Heirloom Artifact", "Wow Token"]
 
 # ---------- Functions for filling sidebar component options ----------
 
@@ -17,18 +17,19 @@ def _get_realm_groups_list():
     return df["realm somethingsomethingsomething"].tolist() if not df.empty else []
 
 # Function for item class list
+@st.cache_data
 def _get_item_class_list():
     query = f"""
         SELECT
             DISTINCT item_class_name
-        FROM refined.mart_filter
+        FROM refined.mart_item_class_subclass
     """
     df = fetch_data_from_db(query)
     return df["item_class_name"].tolist() if not df.empty else []
 
 # Function for item subclass list
 def _get_item_subclass_list(current_item_class):
-    # Build where clause based on item_class choice
+    # Build where clause based on current item_class choice
     if current_item_class == "All":
         where_clause = ""
     else:
@@ -37,19 +38,46 @@ def _get_item_subclass_list(current_item_class):
     query = f"""
         SELECT
             DISTINCT item_subclass_name
-        FROM refined.mart_filter
+        FROM refined.mart_item_class_subclass
         {where_clause}
+        ORDER BY item_subclass_name
     """
     df = fetch_data_from_db(query)
     return df["item_subclass_name"].tolist() if not df.empty else []
 
+# Function for item type list
+def _get_item_type_list(current_item_subclass):
+    # Build where clause based on current item_subclass choice
+    if current_item_subclass == "All":
+        where_clause = ""
+    else:
+        where_clause = f"WHERE item_subclass_name == '{current_item_subclass}'"
+
+    query = f"""
+        SELECT
+            DISTINCT item_type
+        FROM refined.mart_item_class_subclass
+        {where_clause}
+        ORDER BY item_type
+    """
+    df = fetch_data_from_db(query)
+    return df["item_type"].tolist() if not df.empty else []
+
 
 # ---------- Sidebar components ----------
+
+# Free-text-search - TEXT INPUT
+def free_text_search():
+    st.text_input(
+        label = "🔎 Search by name:",
+        placeholder = "Search by item name",
+        key = "sidebar_free_text_search"
+    )
 
 # Region selection - SELECTBOX
 def region_selection():
     st.selectbox(
-        label = "Region:",
+        label = "🌎 Region:",
         options = ["Europe"],
         key = "sidebar_region"
     )
@@ -58,28 +86,36 @@ def region_selection():
 def realm_group_selection():
     st.multiselect(
         label = "Realm Group(s):",
-        options = "Khadgar",
+        options = ["Khadgar"],
         # options = _get_realm_groups_list(),
         key = "sidebar_realm_groups"
     )
 
 # Item class (category) selection - SELECTBOX
 def item_class_selection():
+    options = ["All"] + _get_item_class_list()
     st.selectbox(
-        label = "Item Category:",
-        options = "Weapon",
-        # options = ["All"] + _get_item_class_list(),
+        label = "**Item Category** 📦",
+        options = options,
         key = "sidebar_item_class"
     )
 
-# Item subclass (subcategory) selection - MULTISELECT
-def item_subclass_selection():
-    current_item_class = st.session_state.get("sidebar_item_class")
-    st.multiselect(
+# Item subclass (subcategory) selection - SELECTBOX
+def item_subclass_selection(current_item_class):
+    options = ["All"] + _get_item_subclass_list(current_item_class)
+    st.selectbox(
         label = "Item Sub-category:",
-        options = "Sub",
-        # options = _get_item_subclass_list(current_item_class),
+        options = options,
         key = "sidebar_item_subclass"
+    )
+
+# Item subclass (subcategory) selection - MULTISELECT
+def item_type_selection(current_item_subclass):
+    options = ["All"] + _get_item_type_list(current_item_subclass)
+    st.selectbox(
+        label = "Item Type:",
+        options = options,
+        key = "sidebar_item_type"
     )
 
 # Item rarity range - RANGE SLIDER
@@ -90,6 +126,15 @@ def item_rarity_range():
         options = RARITY_LIST,
         value = (RARITY_LIST[0], RARITY_LIST[5]),
         help = "Filter items by rarity (from lowest to highest), for example Rare to Epic.",
+        key = "sidebar_rarity_old"
+    )
+
+# Item rarity selection - MULTISELECT
+def item_rarity_selection():
+    rarity_color_list = [f"⚪", "🟢", "🔵", "🟣", "🟠"] # 'Poor' rarity is missing grey blob
+    st.multiselect(
+        label = "Rarity:",
+        options = RARITY_LIST,
         key = "sidebar_rarity"
     )
 
@@ -132,11 +177,15 @@ def only_below_vendor_price_checkbox():
 # ---------- Main Sidebar ----------
 def sidebar():
     with st.sidebar:
+        # Dashboard header
+        st.markdown(f"<span style='font-size:2em;'>:rainbow[WoW API Dashboard]</span>", unsafe_allow_html=True)
+
         # Selectbox for page selection
         current_page = st.selectbox(
             label = "Page selection",
             options = ["Items", "Auction House", "Realms"],
-            key = "sidebar_page_selection"
+            key = "sidebar_page_selection",
+            index=1
         )
 
         if current_page == "Items":
@@ -148,9 +197,14 @@ def sidebar():
 
 # Filters for page "Items"
 def items_page_filters():
+    free_text_search()
     item_class_selection()
-    item_subclass_selection()
-    item_rarity_range()
+    current_item_class = st.session_state.get("sidebar_item_class", "All")
+    item_subclass_selection(current_item_class)
+    current_item_subclass = st.session_state.get("sidebar_item_subclass", [])
+    item_type_selection(current_item_subclass)
+    # item_rarity_range() # Old slider
+    item_rarity_selection()
     item_level_range()
     req_level_range()
 
@@ -158,9 +212,14 @@ def items_page_filters():
 def auctions_page_filters():
     region_selection()
     realm_group_selection()
+    free_text_search()
     item_class_selection()
-    item_subclass_selection()
-    item_rarity_range()
+    current_item_class = st.session_state.get("sidebar_item_class", "All")
+    item_subclass_selection(current_item_class)
+    current_item_subclass = st.session_state.get("sidebar_item_subclass", [])
+    item_type_selection(current_item_subclass)
+    # item_rarity_range() # Old slider
+    item_rarity_selection()
     item_level_range()
     req_level_range()
     out_of_stock_checkbox()
@@ -185,5 +244,7 @@ def main_section():
     # ----- REALMS page -----
     elif current_page == "Realms":
         st.header("Realms")
+
+    # ----- DEFAULT case -----
     else:
-        items_page()
+        st.markdown("Select a page in the sidebar.")
