@@ -18,7 +18,7 @@ WITH mart_items AS (
         di.is_equippable,
         di.is_stackable,
         di.max_stack_size,
-        di.media_id,
+        di.icon_hrf AS icon_href
 FROM {{ ref('dim_items') }} AS di
     )
 

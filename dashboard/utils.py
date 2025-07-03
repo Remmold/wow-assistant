@@ -1,7 +1,17 @@
 import pandas as pd
 import streamlit as st
 from wow_api_dlt.db import DuckDBConnection
+from dashboard.sidebar_utils import _get_realm_group_ids_for_realms
+from .db_utils import fetch_data_from_db
 from pathlib import Path
+
+"""
+General-purpose utilities:
+- Database access functions.
+- Query-building/filter-building logic.
+- Active filter rendering.
+- Anything not specific to sidebar or main UI.
+"""
 
 # Temporary (until database is on a server)
 working_directory = Path(__file__).resolve().parent.parent
@@ -46,12 +56,22 @@ def get_sidebar_filters():
 
     return filters
 
+def _simple_equality_filter(filters, conditions, filter_key, column_name):
+    value = filters.get(filter_key)
+    if value and value != "All":
+        # Escape single quotes for SQL safety
+        safe_value = str(value).replace("'", "''")
+        conditions.append(f"{column_name} = '{safe_value}'")
+    return conditions
+
 # Realm(s) filter
 def _realms_filter(filters, conditions) -> list:
-    if filters["realms"]:
-        conditions.append(
-            f"realm IN ({filters['realms']})" # Name or ID?
-        )
+    selected_realms = filters.get("realms")
+    if selected_realms:
+        group_ids = _get_realm_group_ids_for_realms(selected_realms)
+        if group_ids:
+            group_ids_str = ", ".join(str(gid) for gid in group_ids)
+            conditions.append(f"realm_group_id IN ({group_ids_str})")
     return conditions
 
 # Search text filter
@@ -66,32 +86,33 @@ def _search_text_filter(filters, conditions) -> list:
         )
     return conditions
 
-# Item category filter
-def _item_class_filter(filters, conditions) -> list:
-    # Skip filter if "All" is selected or not set
-    if filters["item_class"] and filters["item_class"] != "All":
-        conditions.append(
-            f"item_class_name = '{filters['item_class']}'"
-        )
-    return conditions
+# ------------------------------ TO DELETE IF ALL IS WORKING ------------------------------
+# # Item category filter
+# def _item_class_filter(filters, conditions) -> list:
+#     # Skip filter if "All" is selected or not set
+#     if filters["item_class"] and filters["item_class"] != "All":
+#         conditions.append(
+#             f"item_class_name = '{filters['item_class']}'"
+#         )
+#     return conditions
 
-# Item subcategory filter
-def _item_subclass_filter(filters, conditions) -> list:
-    # Skip filter if "All" is selected or not set
-    if filters["item_subclass"] and filters["item_subclass"] != "All":
-        conditions.append(
-            f"item_subclass_name = '{filters['item_subclass']}'"
-        )
-    return conditions
+# # Item subcategory filter
+# def _item_subclass_filter(filters, conditions) -> list:
+#     # Skip filter if "All" is selected or not set
+#     if filters["item_subclass"] and filters["item_subclass"] != "All":
+#         conditions.append(
+#             f"item_subclass_name = '{filters['item_subclass']}'"
+#         )
+#     return conditions
 
-# Item type filter
-def _item_type_filter(filters, conditions) -> list:
-    # Skip filter if nothing is selected or list is empty
-    if filters["item_type"] and filters["item_type"] != "All":
-        conditions.append(
-            f"item_type = '{filters['item_type']}'"
-        )
-    return conditions
+# # Item type filter
+# def _item_type_filter(filters, conditions) -> list:
+#     # Skip filter if nothing is selected or list is empty
+#     if filters["item_type"] and filters["item_type"] != "All":
+#         conditions.append(
+#             f"item_type = '{filters['item_type']}'"
+#         )
+#     return conditions
 
 # Rarity filter - CURRENTLY NOT WORKING, needs fixing!
 def _rarity_filter(filters, conditions) -> list:
@@ -143,9 +164,9 @@ def build_items_query_conditions(filters):
     conditions = []
 
     _search_text_filter(filters, conditions)
-    _item_class_filter(filters, conditions)
-    _item_subclass_filter(filters, conditions)
-    _item_type_filter(filters, conditions)
+    _simple_equality_filter(filters, conditions, "item_class", "item_class_name")
+    _simple_equality_filter(filters, conditions, "item_subclass", "item_subclass_name")
+    _simple_equality_filter(filters, conditions, "item_type", "item_type")
     _rarity_filter(filters, conditions)
     _ilvl_filter(filters, conditions)
     _req_lvl_filter(filters, conditions)
@@ -159,9 +180,9 @@ def build_auctions_query_conditions(filters):
 
     _search_text_filter(filters, conditions)
     _realms_filter(filters, conditions)
-    _item_class_filter(filters, conditions)
-    _item_subclass_filter(filters, conditions)
-    _item_type_filter(filters, conditions)
+    _simple_equality_filter(filters, conditions, "item_class", "item_class_name")
+    _simple_equality_filter(filters, conditions, "item_subclass", "item_subclass_name")
+    _simple_equality_filter(filters, conditions, "item_type", "item_type")
     _rarity_filter(filters, conditions)
     _ilvl_filter(filters, conditions)
     _req_lvl_filter(filters, conditions)
