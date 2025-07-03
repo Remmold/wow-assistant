@@ -3,8 +3,10 @@
 
 WITH mart_market AS (
     SELECT
+		fm.auction_id,
 		fm.realm_group_id,
 		dr.realm_name,
+		di.id as item_id,
 		di.name AS item_name,
 		da.bid,
 		da.buyout,
@@ -16,6 +18,9 @@ WITH mart_market AS (
 		di.vendor_purchase_price,
 		di.item_class_name,
 		di.item_subclass_name,
+		di.item_type,
+		di.item_level,
+		di.required_level,
 		da.battlepet_breed_id,
 		da.battlepet_level,
 		da.battlepet_quality_id,
