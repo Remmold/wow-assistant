@@ -109,7 +109,7 @@ def fetch_media_hrfs():
         print(f"Current media count: {current_media}/{amount_of_media}: {url}")
 
 
-@dlt.resource(table_name="item_details", write_disposition="replace")
+@dlt.resource()
 def fetch_item_details():
     db_path = "wow_api_dbt/wow_api_data.duckdb"
 
@@ -120,7 +120,7 @@ def fetch_item_details():
         for subclass_id in subclass_ids:
             with db.DuckDBConnection(db_path) as db_handler:
                 df = db_handler.query(f"SELECT DISTINCT id FROM refined.dim_items where item_class_id = {item_class_id} and item_subclass_id = {subclass_id}")
-                df = df[:1] # For testing purposes, limit to 1 row
+                #df = df[:1] # For testing purposes, limit to 1 row
             amount_of_details = len(df)
             current_details = 0
             for _, row in df.iterrows():
