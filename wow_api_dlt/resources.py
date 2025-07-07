@@ -1,11 +1,8 @@
 import dlt
 from wow_api_dlt import auth_util,db
-from wow_api_dlt.dlt_util import fetch_realm_ids
+from wow_api_dlt.dlt_util import fetch_realm_ids, fetch_item_subclasses
 import pandas as pd
 import time
-
-
-
 
 # Fetch data about connected realms    
 @dlt.resource(table_name="realm_data", write_disposition="replace")
@@ -44,8 +41,7 @@ def fetch_auction_house_items(test_mode=False):
             data = response.json()
             for auction in data["auctions"]:
                 auction["realm_id"] = realm_id
-                yield auction # Detta tar rad för rad så i varje connected realm, så yieldar man istället rad för rad istället för alla cirka 30-50 k rader
-                #yield data["auctions"] # Detta blir batchar man yieldar med 30 k rader svårt för dlt att behandla
+                yield auction 
         except Exception as e:
             print(f"DENNA MISSLYCKADES nr{counter} realm id: {realm_id}")
         print(f"\nYIELDAT NR {counter} <-------------------\n") #DEBUG
@@ -352,6 +348,7 @@ def fetch_items():
     else:
         print("✅ All item class/subclass combinations appear to have been fully extracted within defined page limits.")
     print(f"------------------------------------")
+
 
 
 # @dlt.source that we use in pipeline.run instead of @dlt.resource we use all the resources we want to run in the pipeline
