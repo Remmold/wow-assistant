@@ -3,6 +3,9 @@ from wow_api_dlt import auth_util,db
 from wow_api_dlt.dlt_util import fetch_realm_ids, fetch_item_class_and_subclasses
 import pandas as pd
 import time
+import sys 
+
+from concurrent.futures import ThreadPoolExecutor, as_completed #this is used to multithreading. we use it to perform multiple API calls in parallel, which can significantly speed up the data fetching process.
 
 # Fetch data about connected realms    
 @dlt.resource(table_name="realm_data", write_disposition="replace")
@@ -114,45 +117,119 @@ def fetch_item_details():
     db_path = "wow_api_dbt/wow_api_data.duckdb"
 
     item_class_dict = fetch_item_class_and_subclasses()
+    
+    MAX_WORKERS = 10
+
+    all_item_ids_to_fetch = []
+    item_id_context = {} 
+
+    print("Collecting item IDs from DuckDB...")
     for item_class_id, value in item_class_dict.items():
-        item_class_name = value.get("name", f"Unknown Class {item_class_id}")
+        item_class_name_raw = value.get("name", f"Unknown Class {item_class_id}")
+        item_class_name_sanitized = item_class_name_raw.lower().replace(" ", "_").replace("-", "_")
+
         subclass_ids = value.get("subclass_ids", [])
+        if not subclass_ids:
+            subclass_ids = [None] 
+
         for subclass_id in subclass_ids:
             with db.DuckDBConnection(db_path) as db_handler:
-                df = db_handler.query(f"SELECT DISTINCT id FROM refined.dim_items where item_class_id = {item_class_id} and item_subclass_id = {subclass_id}")
-                #df = df[:1] # For testing purposes, limit to 1 row
-            amount_of_details = len(df)
-            current_details = 0
+                if subclass_id is not None:
+                    query = f"SELECT DISTINCT id FROM refined.dim_items WHERE item_class_id = {item_class_id} AND item_subclass_id = {subclass_id}"
+                else:
+                    query = f"SELECT DISTINCT id FROM refined.dim_items WHERE item_class_id = {item_class_id}"
+                
+                df = db_handler.query(query)
+                # df = df[:1] # Keep this commented out if you want to fetch all items for actual runs
+
             for _, row in df.iterrows():
                 item_id = int(row["id"])
-                endpoint = f"/data/wow/item/{item_id}"
-                params = {"namespace": "static-eu"}
-                return_frame = pd.DataFrame()
+                all_item_ids_to_fetch.append(item_id)
+                item_id_context[item_id] = { 
+                    "item_class_id": item_class_id,
+                    "class_name_sanitized": item_class_name_sanitized,
+                    "class_name_raw": item_class_name_raw,
+                    "subclass_id": subclass_id
+                }
 
-                try:
-                    response = auth_util.get_api_response(endpoint=endpoint, params=params)
-                    data = response.json()
-                    return_frame["id"] = [data.get("id")]
-                    if "description" in data:
-                        return_frame["description"] = [data.get("description", {}).get("en_US")]
-                    if "binding" in data:
-                        return_frame["binding_name"] = [data.get("binding", {}).get("name",{})]
-                    if "item_preview" in data:
-                        return_frame["item_preview"] = [data.get("item_preview", {})]
-                except Exception as e:
-                    print(f"Failed to fetch or parse item {item_id}: {e}")
-                    continue
+    amount_of_details = len(all_item_ids_to_fetch)
+    print(f"Total unique items to fetch details for: {amount_of_details}")
+
+    # Manual progress bar variables
+    current_processed_count = 0
+    bar_length = 50 # Length of the progress bar in characters
+    
+    # This allows us to use a thread pool to fetch item details concurrently
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_to_item_id = {
+            executor.submit(auth_util.get_api_response, endpoint=f"/data/wow/item/{item_id}", params={"namespace": "static-eu"}): item_id
+            for item_id in all_item_ids_to_fetch
+        }
+
+        # Initial display of the progress bar
+        _update_progress_bar(current_processed_count, amount_of_details, bar_length)
+
+        for future in as_completed(future_to_item_id):
+            item_id = future_to_item_id[future]
+            context = item_id_context[item_id]
+            item_class_id = context["item_class_id"]
+            item_class_name_sanitized = context["class_name_sanitized"]
+            item_class_name_raw = context["class_name_raw"]
+            subclass_id = context["subclass_id"]
+
+            try:
+                response = future.result() 
+                data = response.json()
 
                 if not isinstance(data, dict) or "id" not in data:
-                    print(f"Invalid data format for item {item_id}")
+                    # Print full message on a new line for invalid data, then update progress
+                    sys.stdout.write(f"\nWarning: Invalid data format for item {item_id}\n")
+                    sys.stdout.flush()
                     continue
 
-                #yield return_frame
-                yield dlt.mark.with_table_name(data, table_name=f"item_details_{item_class_name}")
-                current_details += 1
-                if current_details >= amount_of_details:
-                    break
-                print(f"Current item details count: {current_details}/{amount_of_details} for item ID: {item_id}")
+                item_data_to_yield = {}
+                item_data_to_yield["id"] = data.get("id")
+                if "description" in data:
+                    item_data_to_yield["description"] = data.get("description", {}).get("en_US")
+                if "binding" in data:
+                    item_data_to_yield["binding_name"] = data.get("binding", {}).get("name")
+                if "item_preview" in data:
+                    item_data_to_yield["item_preview"] = data.get("item_preview")
+
+                item_data_to_yield["item_class_id"] = item_class_id
+                item_data_to_yield["item_subclass_id"] = subclass_id if subclass_id is not None else -1
+
+                yield dlt.mark.with_table_name(item_data_to_yield, table_name=f"item_details_{item_class_name_sanitized}")
+
+            except Exception as e:
+                # Print full message on a new line for errors, then update progress
+                sys.stdout.write(f"\nError fetching item {item_id}: {e}\n")
+                sys.stdout.write(f"  Class: {item_class_name_raw}, Subclass: {subclass_id}\n")
+                sys.stdout.flush()
+                continue
+            
+            # Increment and update progress bar
+            current_processed_count += 1
+            _update_progress_bar(current_processed_count, amount_of_details, bar_length)
+
+    # Final newline to ensure subsequent prints appear on a new line
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+    print(f"Finished fetching details for all items. Total processed: {current_processed_count} successfully.")
+
+def _update_progress_bar(current, total, bar_length):
+    """
+    Manually updates a console progress bar on the same line.
+    """
+    if total == 0: # Avoid division by zero if no items
+        return
+
+    progress = current / total
+    arrow = '=' * int(round(progress * bar_length) - 1) + '>'
+    spaces = ' ' * (bar_length - len(arrow))
+    
+    sys.stdout.write(f"\rFetching Item Details: [{arrow}{spaces}] {current}/{total} ({progress:.1%})")
+    sys.stdout.flush()
        
 
 
