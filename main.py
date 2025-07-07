@@ -7,11 +7,12 @@ while True:
     print("1: Complete pipeline run (fetch all data and load into DuckDB)")
     print("2: Update auction house items (fetch and load into DuckDB)")
     print("3: Update Item data (fetch and load into DuckDB)")
-    print("4: Create/Update Test Database (creates or updates a database with a smaller subset of data for testing purposes)")
-    print("5: View database with DuckDB UI")
-    print("6: Exit")
+    print("4: Update Item_details data (fetch and load into DuckDB)")
+    print("5: Create/Update Test Database (creates or updates a database with a smaller subset of data for testing purposes)")
+    print("6: View database with DuckDB UI")
+    print("7: Exit")
 
-    choice = input("Please enter your choice (1-6): ")
+    choice = input("Please enter your choice (1-7): ")
 
     match choice:
         case "1":
@@ -23,8 +24,10 @@ while True:
         case "3":
             print("Updating Item data...")
             run_pipeline(test_mode=False, sources=["items"])
-
         case "4":
+            print("Updating Item_details data...")
+            run_pipeline(test_mode=False, sources=["item_details"])
+        case "5":
             print("1: Create test database")
             print("2: Update test database")
             test_choice = input("Please enter your choice (1-2): ")
@@ -38,7 +41,7 @@ while True:
                 case _:
                     print("Invalid choice. Exiting.")
                     sys.exit(1) 
-        case "5":
+        case "6":
             print("Attempting to open DuckDB UI for main database...")
             try:
                 subprocess.Popen(["duckdb", "-ui", "wow_api_dbt/wow_api_data.duckdb"])
@@ -47,9 +50,9 @@ while True:
                 print("Error: 'duckdb' command not found. Please ensure DuckDB CLI is installed and in your system's PATH.")
             except subprocess.CalledProcessError as e:
                 print(f"Error launching DuckDB UI: {e}. Check DuckDB installation and permissions.")
-        case "6":
+        case "7":
             print("Exiting the program. Farewell, adventurer!")
             sys.exit(0)
         case _: # Handles any other invalid input for the main menu
-            print("Invalid choice. Please enter a number between 1 and 5.")
+            print("Invalid choice. Please enter a number between 1 and 7.")
             sys.exit(1)
