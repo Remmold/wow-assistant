@@ -1,6 +1,6 @@
 import dlt
 from wow_api_dlt import auth_util,db
-from wow_api_dlt.dlt_util import fetch_realm_ids, fetch_item_subclasses
+from wow_api_dlt.dlt_util import fetch_realm_ids, fetch_item_subclasses,fetch_item_classes
 import pandas as pd
 import time
 
@@ -112,6 +112,7 @@ def fetch_media_hrfs():
 @dlt.resource(table_name="item_details", write_disposition="replace")
 def fetch_item_details():
     db_path = "wow_api_dbt/wow_api_data.duckdb"
+    item_class_dict = fetch_item_classes()
     subclass_dict = fetch_item_subclasses()
     for item_class_id, subclass_ids in subclass_dict.items():
         for subclass_id in subclass_ids:

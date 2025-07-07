@@ -32,12 +32,12 @@ def fetch_item_classes():
     return item_class_dict
 
 # Returns a dictionary of indexes for item subclasses
-def fetch_item_subclasses():
-    item_class_ids = fetch_item_classes()
-    subclass_dict = {}
+def fetch_item_class_and_subclasses():
+    item_class_dict = fetch_item_classes()
+    
 
-    for key,value in item_class_ids.items():
-        endpoint = f"/data/wow/item-class/{key}"
+    for item_class_id,value in item_class_dict.items():
+        endpoint = f"/data/wow/item-class/{item_class_id}"
         params = {
             "namespace": "static-eu",
             "region": "eu"
@@ -47,10 +47,10 @@ def fetch_item_subclasses():
         data = response.json()
 
         subclass_ids = [subclass["id"] for subclass in data.get("item_subclasses", [])]
-        subclass_dict[key] = subclass_ids
+        value["subclass_ids"] = subclass_ids
 
         print(f"Item class {value['name']} has subclasses: {subclass_ids}")
-    return subclass_dict
+    return item_class_dict
 
 if __name__ == "__main__":
     fetch_item_classes()
