@@ -1,6 +1,6 @@
 import dlt
 from wow_api_dlt import auth_util,db
-from wow_api_dlt.dlt_util import fetch_realm_ids, fetch_item_subclasses,fetch_item_classes
+from wow_api_dlt.dlt_util import fetch_realm_ids, fetch_item_class_and_subclasses
 import pandas as pd
 import time
 
@@ -112,9 +112,11 @@ def fetch_media_hrfs():
 @dlt.resource(table_name="item_details", write_disposition="replace")
 def fetch_item_details():
     db_path = "wow_api_dbt/wow_api_data.duckdb"
-    item_class_dict = fetch_item_classes()
-    subclass_dict = fetch_item_subclasses()
-    for item_class_id, subclass_ids in subclass_dict.items():
+
+    item_class_dict = fetch_item_class_and_subclasses()
+    for item_class_id, value in item_class_dict.items():
+        item_class_name = value.get("name", f"Unknown Class {item_class_id}")
+        subclass_ids = value.get("subclass_ids", [])
         for subclass_id in subclass_ids:
             with db.DuckDBConnection(db_path) as db_handler:
                 df = db_handler.query(f"SELECT DISTINCT id FROM refined.dim_items where item_class_id = {item_class_id} and item_subclass_id = {subclass_id}")
@@ -146,7 +148,7 @@ def fetch_item_details():
                     continue
 
                 #yield return_frame
-                yield data
+                yield dlt.mark.with_table_name(data, table_name=f"item_details_{item_class_name}")
                 current_details += 1
                 if current_details >= amount_of_details:
                     break
@@ -161,8 +163,8 @@ def fetch_items():
     start_time = time.time()
 
     print("Fetching item subclasses...")
-    subclass_dict = fetch_item_subclasses()
-    print(f"✅ Item subclasses fetched. Found {len(subclass_dict)} item classes with subclasses.")
+    item_class_dict = fetch_item_class_and_subclasses()
+    print(f"✅ Item subclasses fetched. Found {len(item_class_dict)} item classes with subclasses.")
 
     rarities = [
         "Poor",        # Gray
@@ -207,12 +209,13 @@ def fetch_items():
         total_api_calls += 1
         return response.json().get("results", [])
 
-    class_count = len(subclass_dict)
+    class_count = len(item_class_dict)
     current_class_idx = 0
 
-    for item_class_id, subclass_ids in subclass_dict.items():
+    for item_class_id, value in item_class_dict.items():
         current_class_idx += 1
         print(f"\n--- Processing Item Class {item_class_id} ({current_class_idx}/{class_count}) ---")
+        subclass_ids = value.get("subclass_ids", [])
         subclass_count = len(subclass_ids)
         current_subclass_idx = 0
 
@@ -371,6 +374,10 @@ def wow_api_source(optional_source_list=None,test_mode=False):
             method_list.append(fetch_items())
         if "realm_data" in optional_source_list:
             method_list.append(fetch_realm_data())
+        if "item_details" in optional_source_list:
+            method_list.append(fetch_item_details())
+        if "media" in optional_source_list:
+            method_list.append(fetch_media_hrfs())
         return method_list
     else:
         #return [fetch_item_details()] 
