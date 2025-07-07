@@ -1,8 +1,8 @@
 import dlt
 from wow_api_dlt import auth_util,db
 
-import json
 import pandas as pd
+import time
 
 # Fetch and bring all the connected realm IDs, returns a list of IDs
 def _fetch_ids():
@@ -201,11 +201,17 @@ def fetch_item_details():
                 print(f"Current item details count: {current_details}/{amount_of_details} for item ID: {item_id}")
        
 
-# Return all items, one rarity, class and subclass at a time
+
+
 @dlt.resource(table_name="items", write_disposition="merge", primary_key="id")
 def fetch_items():
+    print("Starting item data extraction with adaptive filtering...")
+    start_time = time.time()
+
+    print("Fetching item subclasses...")
     subclass_dict = fetch_item_subclasses()
-    all_items = []
+    print(f"✅ Item subclasses fetched. Found {len(subclass_dict)} item classes with subclasses.")
+
     rarities = [
         "Poor",        # Gray
         "Common",      # White
@@ -216,42 +222,181 @@ def fetch_items():
         "Artifact",    # Gold
         "Heirloom"     # Light Gold
     ]
+    print(f"Configured with {len(rarities)} rarities: {', '.join(rarities)}")
+
+    min_overall_ilvl = 1
+    max_overall_ilvl = 750 # Covers current highest and projected TWW max ilvls with buffer
+    step = 10
+
+    all_level_ranges = [
+        (start_ilvl, min(start_ilvl + step - 1, max_overall_ilvl))
+        for start_ilvl in range(min_overall_ilvl, max_overall_ilvl + step, step)
+    ]
+    print(f"Pre-generated {len(all_level_ranges)} item level ranges for adaptive filtering.")
+
+    total_items_fetched = 0
+    total_api_calls = 0
+    # New set to store (item_class_id, subclass_id) tuples that were not fully extracted
+    incomplete_extractions = set()
+
+    # Define the threshold for adaptive filtering
+    ADAPTIVE_THRESHOLD_PAGES = 10
+    API_RESULTS_PER_PAGE = 100 # Standard max results per page for WoW API
+    # Page limit for refined queries (per ILvl range)
+    REFINED_QUERY_PAGE_LIMIT = 10
+    # Safety cap for initial broad search pages (to avoid excessively long broad searches)
+    BROAD_SEARCH_SAFETY_CAP_PAGES = ADAPTIVE_THRESHOLD_PAGES + 10 # E.g., 20 pages total
+
+    def _fetch_page_data(endpoint, params, current_page, filter_description):
+        nonlocal total_api_calls
+        params["_page"] = current_page
+        print(f"          API Call: Page {current_page} for {filter_description}")
+        response = auth_util.get_api_response(endpoint=endpoint, params=params)
+        total_api_calls += 1
+        return response.json().get("results", [])
+
+    class_count = len(subclass_dict)
+    current_class_idx = 0
 
     for item_class_id, subclass_ids in subclass_dict.items():
+        current_class_idx += 1
+        print(f"\n--- Processing Item Class {item_class_id} ({current_class_idx}/{class_count}) ---")
+        subclass_count = len(subclass_ids)
+        current_subclass_idx = 0
+
         for subclass_id in subclass_ids:
+            current_subclass_idx += 1
+            print(f"  Processing Subclass {subclass_id} ({current_subclass_idx}/{subclass_count}) within Class {item_class_id}")
+            rarity_count = len(rarities)
+            current_rarity_idx = 0
+
+            # This flag tracks if any specific rarity/ilvl combination within this
+            # class/subclass hit a page limit.
+            subclass_extraction_complete = True
+
             for rarity in rarities:
+                current_rarity_idx += 1
+                print(f"    Processing Rarity '{rarity}' ({current_rarity_idx}/{rarity_count}) for Subclass {subclass_id}")
+
+                base_params = {
+                    "namespace": "static-eu", # Adjust as needed (e.g., static-us)
+                    "orderby": "id",
+                    "item_class.id": item_class_id,
+                    "item_subclass.id": subclass_id,
+                    "quality.name.en_US": rarity,
+                }
+                endpoint = "/data/wow/search/item"
+                filter_desc = f"Class {item_class_id}, Subclass {subclass_id}, Rarity '{rarity}' (initial broad query)"
+
+                items_in_initial_pass = 0
                 page = 1
+                should_refilter_by_ilvl = False
+                current_filter_hit_page_limit = False # Flag for current rarity/ilvl combo
+
+                # Attempt initial broad fetch
                 while True:
-                    endpoint = "/data/wow/search/item"
-                    params = {
-                        "namespace": "static-eu",
-                        "orderby": "id",
-                        "_page": page,
-                        "item_class.id": item_class_id,
-                        "item_subclass.id": subclass_id,
-                        "quality.name.en_US": rarity,
-                    }
+                    results = _fetch_page_data(endpoint, base_params.copy(), page, filter_desc)
 
-                    response = auth_util.get_api_response(endpoint=endpoint, params=params)
-                    data = response.json()
-
-                    results = data.get("results", [])
                     if not results:
+                        print(f"            No more results for the broad filter. Breaking from page loop.")
                         break
+
+                    # Check if we consistently get full pages up to the 10-page (1000 item) threshold.
+                    if len(results) == API_RESULTS_PER_PAGE and page >= ADAPTIVE_THRESHOLD_PAGES:
+                        should_refilter_by_ilvl = True
+                        print(f"            Reached {page} full pages ({page * API_RESULTS_PER_PAGE} items). Will re-fetch this combo with item level filtering.")
+                        break # Exit this broad while loop to proceed to ilvl filtering
 
                     for result in results:
                         yield result["data"]
+                        total_items_fetched += 1
+                        items_in_initial_pass += 1
 
-                    print(f"Fetched {len(results)} items for class {item_class_id}, subclass {subclass_id}, page {page}")
-                    
+                    print(f"            Fetched {len(results)} items on page {page}. Total for broad filter: {items_in_initial_pass}")
+
                     page += 1
+                    # Safety cap for initial broad search pages. If hit, force refilter or acknowledge incomplete.
+                    if page > BROAD_SEARCH_SAFETY_CAP_PAGES:
+                        print(f"            ⚠️ Stopped broad search after {page-1} pages as a safety cap.")
+                        current_filter_hit_page_limit = True # Mark as incomplete for this rarity/subclass
+                        should_refilter_by_ilvl = True # Force refilter if too many pages
+                        break # Exit broad while loop
 
-                    if page > 10:
-                        print(f"⚠️ Stopped after 10 pages for subclass {subclass_id}")
-                        break
+                if should_refilter_by_ilvl:
+                    print(f"      Initiating item level specific fetching for Class {item_class_id}, Subclass {subclass_id}, Rarity '{rarity}'")
+                    items_in_refiltered_pass = 0
+                    level_range_count = len(all_level_ranges)
+                    current_level_range_idx = 0
 
-    print(f"✅ Fetched total {len(all_items)} items.")
-    return all_items
+                    for min_level, max_level in all_level_ranges:
+                        current_level_range_idx += 1
+                        print(f"        Fetching for Item Level Range: {min_level}-{max_level} ({current_level_range_idx}/{level_range_count})")
+                        page = 1
+                        items_in_current_ilvl_filter = 0
+
+                        ilvl_params = base_params.copy()
+                        ilvl_params["min_level"] = min_level
+                        ilvl_params["max_level"] = max_level
+                        ilvl_filter_desc = (
+                            f"Class {item_class_id}, Subclass {subclass_id}, "
+                            f"Rarity '{rarity}', ILvl {min_level}-{max_level}"
+                        )
+
+                        while True:
+                            results = _fetch_page_data(endpoint, ilvl_params.copy(), page, ilvl_filter_desc)
+
+                            if not results:
+                                print(f"            No more results for ILvl {min_level}-{max_level}. Breaking from page loop.")
+                                break
+
+                            for result in results:
+                                yield result["data"]
+                                total_items_fetched += 1
+                                items_in_refiltered_pass += 1
+                                items_in_current_ilvl_filter += 1
+
+                            print(f"            Fetched {len(results)} items on page {page}. Total for this ILvl filter: {items_in_current_ilvl_filter}")
+
+                            page += 1
+                            if page > REFINED_QUERY_PAGE_LIMIT:
+                                print(f"            ⚠️ Stopped after {REFINED_QUERY_PAGE_LIMIT} pages for {ilvl_filter_desc}. This specific ILvl range may not be fully extracted.")
+                                current_filter_hit_page_limit = True # Mark as incomplete for this specific ILvl range
+                                break
+                        print(f"        ✅ Completed fetching for ILvl Range {min_level}-{max_level}. Fetched {items_in_current_ilvl_filter} items.")
+                    print(f"      ✅ Completed item level specific fetching. Total re-filtered: {items_in_refiltered_pass} items.")
+                else:
+                    print(f"      ✅ Completed broad fetching. Total fetched: {items_in_initial_pass} items. No item level refiltering needed.")
+
+                if current_filter_hit_page_limit:
+                    subclass_extraction_complete = False # If any rarity/ilvl hit a limit, the subclass is incomplete
+                print(f"    ✅ Completed fetching for Rarity '{rarity}'.")
+
+            # After all rarities for a subclass are processed, check if it was fully extracted
+            if not subclass_extraction_complete:
+                incomplete_extractions.add((item_class_id, subclass_id))
+                print(f"  ❌ Subclass {subclass_id} within Class {item_class_id} was NOT fully extracted due to page limits.")
+            else:
+                print(f"  ✅ Subclass {subclass_id} within Class {item_class_id} fully extracted.")
+
+        print(f"--- ✅ Completed processing for Item Class {item_class_id}. ---")
+
+    end_time = time.time()
+    duration = end_time - start_time
+
+    print(f"\n--- Item Data Extraction Summary ---")
+    print(f"✅ Fetched total {total_items_fetched} items.")
+    print(f"✅ Made {total_api_calls} API calls.")
+    print(f"✅ Total extraction time: {duration:.2f} seconds.")
+
+    print(f"\n--- Incomplete Extractions Summary ---")
+    if incomplete_extractions:
+        print(f"❌ Found {len(incomplete_extractions)} item class/subclass combinations that were not fully extracted (hit page limits):")
+        for class_id, sub_id in sorted(list(incomplete_extractions)): # Sort for consistent output
+            print(f"  - Item Class: {class_id}, Subclass: {sub_id}")
+        print("\nConsider increasing page limits (REFINED_QUERY_PAGE_LIMIT, BROAD_SEARCH_SAFETY_CAP_PAGES) or further refining filters for these combinations.")
+    else:
+        print("✅ All item class/subclass combinations appear to have been fully extracted within defined page limits.")
+    print(f"------------------------------------")
 
 
 # @dlt.source that we use in pipeline.run instead of @dlt.resource we use all the resources we want to run in the pipeline
