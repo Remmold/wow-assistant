@@ -1,4 +1,4 @@
-import auth_util
+from wow_api_dlt import  auth_util
 
 # Fetch and bring all the connected realm IDs, returns a list of IDs
 def fetch_realm_ids():
