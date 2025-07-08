@@ -3,6 +3,7 @@ from wow_api_dlt import auth_util,db
 from wow_api_dlt.dlt_util import fetch_realm_ids, fetch_item_class_and_subclasses
 import pandas as pd
 import time
+import datetime
 import sys 
 
 from concurrent.futures import ThreadPoolExecutor, as_completed #this is used to multithreading. we use it to perform multiple API calls in parallel, which can significantly speed up the data fetching process.
@@ -26,6 +27,8 @@ def fetch_realm_data():
 # Fetch AH items
 @dlt.resource(table_name="auctions", write_disposition="replace")
 def fetch_auction_house_items(test_mode=False):
+    time_of_run = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    print(f"run started at : {time_of_run}")
     realm_ids = fetch_realm_ids() # Fetch all connected realm IDs once
     if test_mode:
         realm_ids = realm_ids[:3] # Limit for testing
@@ -65,7 +68,7 @@ def fetch_auction_house_items(test_mode=False):
 
                 for auction in data["auctions"]:
                     auction["realm_id"] = realm_id # Add realm_id to each auction item
-                    auction["timestamp"] = time.time() # Add current timestamp to each auction item
+                    auction["timestamp"] = time_of_run
                     yield auction 
             except Exception as e:
                 # Print errors on a new line to not interfere with the progress bar
@@ -82,8 +85,10 @@ def fetch_auction_house_items(test_mode=False):
 
 
 # Fetch AH commodities
-@dlt.resource(table_name="commodities", write_disposition="replace")
+@dlt.resource(table_name="commodities", write_disposition="append")
 def fetch_ah_commodities():
+    time_of_run = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    print(f"run started at : {time_of_run}")
     print("Fetching Auction House Commodities...")
     endpoint = "/data/wow/auctions/commodities"
     params = {
@@ -97,7 +102,7 @@ def fetch_ah_commodities():
             print("Warning: 'auctions' key not found in commodities response. No data to yield.")
             return # Exit if no auctions
         for auction in data["auctions"]:
-            auction["timestamp"] = time.time() # Add current timestamp to each auction item
+            auction["timestamp"] = time_of_run
             yield auction
         print("Successfully fetched Auction House Commodities.")
     except Exception as e:
@@ -489,6 +494,7 @@ def wow_api_source(optional_source_list=None,test_mode=False):
         method_list = []
         if "auctions" in optional_source_list:
             method_list.append(fetch_auction_house_items(test_mode=test_mode))
+        if "commodities" in optional_source_list:
             method_list.append(fetch_ah_commodities())
         if "items" in optional_source_list:
             method_list.append(fetch_items())
