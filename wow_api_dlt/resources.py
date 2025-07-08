@@ -1,29 +1,17 @@
 import dlt
 from wow_api_dlt import auth_util,db
-
+from wow_api_dlt.dlt_util import fetch_realm_ids, fetch_item_class_and_subclasses
 import pandas as pd
 import time
+import datetime
+import sys 
 
-# Fetch and bring all the connected realm IDs, returns a list of IDs
-def _fetch_ids():
-    """
-    Fetches all the connected realm ids and cut out the id from the url. THIS IS ONLY NECESARY LIKE ONES?? 
-    """
-    endpoint = "/data/wow/connected-realm/index"
-    params = {
-        "namespace" : "dynamic-eu"
-    }
-    response = auth_util.get_api_response(endpoint=endpoint, params=params)
-    connected_realm_list = response.json()["connected_realms"]
-    
-    list_of_realm_ids = [x["href"].split("/")[-1].split("?")[0] for x in connected_realm_list]
-    return list_of_realm_ids
-
+from concurrent.futures import ThreadPoolExecutor, as_completed #this is used to multithreading. we use it to perform multiple API calls in parallel, which can significantly speed up the data fetching process.
 
 # Fetch data about connected realms    
 @dlt.resource(table_name="realm_data", write_disposition="replace")
 def fetch_realm_data():
-    for realm_id in _fetch_ids():
+    for realm_id in fetch_realm_ids():
         endpoint = f"/data/wow/connected-realm/{realm_id}"
         params = {                
             "{{connectedRealmId}}" : realm_id,
@@ -39,77 +27,89 @@ def fetch_realm_data():
 # Fetch AH items
 @dlt.resource(table_name="auctions", write_disposition="replace")
 def fetch_auction_house_items(test_mode=False):
-    counter = 0 #DEBUG
-    realm_ids = _fetch_ids() # Fetch all connected realm IDs once
+    time_of_run = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    print(f"run started at : {time_of_run}")
+    realm_ids = fetch_realm_ids() # Fetch all connected realm IDs once
     if test_mode:
-        realm_ids = realm_ids[:3]
+        realm_ids = realm_ids[:3] # Limit for testing
 
-    for realm_id in realm_ids:
-        try:
-            endpoint = f"/data/wow/connected-realm/{realm_id}/auctions"                             
-            params = {                
-                "{{connectedRealmId}}" : realm_id,
-                "namespace" : "dynamic-eu",
-                }
-            response = auth_util.get_api_response(endpoint=endpoint, params=params)
-            response.raise_for_status()
-            counter += 1 #DEBUG
-            data = response.json()
-            for auction in data["auctions"]:
-                auction["realm_id"] = realm_id
-                yield auction # Detta tar rad för rad så i varje connected realm, så yieldar man istället rad för rad istället för alla cirka 30-50 k rader
-                #yield data["auctions"] # Detta blir batchar man yieldar med 30 k rader svårt för dlt att behandla
-        except Exception as e:
-            print(f"DENNA MISSLYCKADES nr{counter} realm id: {realm_id}")
-        print(f"\nYIELDAT NR {counter} <-------------------\n") #DEBUG
+    amount_of_realms = len(realm_ids)
+    print(f"Total realms to fetch auction data for: {amount_of_realms}")
+
+    MAX_WORKERS = 10 # Adjust based on API rate limits and network latency for AH data
+
+    current_processed_realms = 0
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        # Submit tasks for each realm ID
+        future_to_realm_id = {
+            executor.submit(
+                auth_util.get_api_response,
+                endpoint=f"/data/wow/connected-realm/{r_id}/auctions",
+                params={"{{connectedRealmId}}": r_id, "namespace": "dynamic-eu"}
+            ): r_id
+            for r_id in realm_ids
+        }
+
+        _update_progress_bar(current_processed_realms, amount_of_realms, "Fetching AH Items")
+
+        for future in as_completed(future_to_realm_id):
+            realm_id = future_to_realm_id[future]
+            
+            try:
+                response = future.result()
+                response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+                data = response.json()
+                
+                if "auctions" not in data:
+                    sys.stdout.write(f"\nWarning: 'auctions' key not found for realm ID: {realm_id}. Skipping.\n")
+                    sys.stdout.flush()
+                    continue
+
+                for auction in data["auctions"]:
+                    auction["realm_id"] = realm_id # Add realm_id to each auction item
+                    auction["timestamp"] = time_of_run
+                    yield auction 
+            except Exception as e:
+                # Print errors on a new line to not interfere with the progress bar
+                sys.stdout.write(f"\nError fetching data for realm ID {realm_id}: {e}\n")
+                sys.stdout.flush()
+            
+            current_processed_realms += 1
+            _update_progress_bar(current_processed_realms, amount_of_realms, "Fetching AH Items")
+
+    sys.stdout.write("\n") # Final newline after progress bar completion
+    sys.stdout.flush()
+    print(f"Finished fetching auction data for {current_processed_realms} realms.")
+
 
 
 # Fetch AH commodities
-@dlt.resource(table_name="commodities", write_disposition="replace") # merge?
+@dlt.resource(table_name="commodities", write_disposition="append")
 def fetch_ah_commodities():
-    endpoint = f"/data/wow/auctions/commodities"                             
-    params = {                
-        "namespace" : "dynamic-eu",
-        }
-    response = auth_util.get_api_response(endpoint=endpoint, params=params)
-    data = response.json()
-    for auction in data["auctions"]:
-        yield auction
-
-
-# Returns a list of indexes for item classes
-def fetch_item_classes(): 
-    endpoint = "/data/wow/item-class/index"
+    time_of_run = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    print(f"run started at : {time_of_run}")
+    print("Fetching Auction House Commodities...")
+    endpoint = "/data/wow/auctions/commodities"
     params = {
-        "namespace": "static-eu"
+        "namespace": "dynamic-eu",
     }
-    item_class_ids = []
-    response = auth_util.get_api_response(endpoint=endpoint, params=params)
-    data = response.json()
-    for id in data.get("item_classes", []):
-        item_class_ids.append(id["id"])
-    return item_class_ids
-
-# Returns a dictionary of indexes for item subclasses
-def fetch_item_subclasses():
-    item_class_ids = fetch_item_classes()
-    subclass_dict = {}
-
-    for item_class_id in item_class_ids:
-        endpoint = f"/data/wow/item-class/{item_class_id}"
-        params = {
-            "namespace": "static-eu",
-            "region": "eu"
-        }
-
+    try:
         response = auth_util.get_api_response(endpoint=endpoint, params=params)
+        response.raise_for_status() # Check for HTTP errors
         data = response.json()
+        if "auctions" not in data:
+            print("Warning: 'auctions' key not found in commodities response. No data to yield.")
+            return # Exit if no auctions
+        for auction in data["auctions"]:
+            auction["timestamp"] = time_of_run
+            yield auction
+        print("Successfully fetched Auction House Commodities.")
+    except Exception as e:
+        print(f"Error fetching Auction House Commodities: {e}")
 
-        subclass_ids = [subclass["id"] for subclass in data.get("item_subclasses", [])]
-        subclass_dict[item_class_id] = subclass_ids
 
-        print(f"Item class {item_class_id} has subclasses: {subclass_ids}")
-    return subclass_dict
+
 
 @dlt.resource(table_name="item_media", write_disposition="replace")
 def fetch_media_hrfs():
@@ -158,47 +158,126 @@ def fetch_media_hrfs():
         print(f"Current media count: {current_media}/{amount_of_media}: {url}")
 
 
-@dlt.resource(table_name="item_details", write_disposition="replace")
+@dlt.resource()
 def fetch_item_details():
     db_path = "wow_api_dbt/wow_api_data.duckdb"
-    subclass_dict = fetch_item_subclasses()
-    for item_class_id, subclass_ids in subclass_dict.items():
+
+    item_class_dict = fetch_item_class_and_subclasses()
+    
+    MAX_WORKERS = 10
+
+    all_item_ids_to_fetch = []
+    item_id_context = {} 
+
+    print("Collecting item IDs from DuckDB...")
+    for item_class_id, value in item_class_dict.items():
+        item_class_name_raw = value.get("name", f"Unknown Class {item_class_id}")
+        item_class_name_sanitized = item_class_name_raw.lower().replace(" ", "_").replace("-", "_")
+
+        subclass_ids = value.get("subclass_ids", [])
+        if not subclass_ids:
+            subclass_ids = [None] 
+
         for subclass_id in subclass_ids:
             with db.DuckDBConnection(db_path) as db_handler:
-                df = db_handler.query(f"SELECT DISTINCT id FROM refined.dim_items where item_class_id = {item_class_id} and item_subclass_id = {subclass_id}")
-                df = df[:1] # For testing purposes, limit to 1 row
-            amount_of_details = len(df)
-            current_details = 0
+                if subclass_id is not None:
+                    query = f"SELECT DISTINCT id FROM refined.dim_items WHERE item_class_id = {item_class_id} AND item_subclass_id = {subclass_id}"
+                else:
+                    query = f"SELECT DISTINCT id FROM refined.dim_items WHERE item_class_id = {item_class_id}"
+                
+                df = db_handler.query(query)
+                # df = df[:1] # Keep this commented out if you want to fetch all items for actual runs
+
             for _, row in df.iterrows():
                 item_id = int(row["id"])
-                endpoint = f"/data/wow/item/{item_id}"
-                params = {"namespace": "static-eu"}
-                return_frame = pd.DataFrame()
+                all_item_ids_to_fetch.append(item_id)
+                item_id_context[item_id] = { 
+                    "item_class_id": item_class_id,
+                    "class_name_sanitized": item_class_name_sanitized,
+                    "class_name_raw": item_class_name_raw,
+                    "subclass_id": subclass_id
+                }
 
-                try:
-                    response = auth_util.get_api_response(endpoint=endpoint, params=params)
-                    data = response.json()
-                    return_frame["id"] = [data.get("id")]
-                    if "description" in data:
-                        return_frame["description"] = [data.get("description", {}).get("en_US")]
-                    if "binding" in data:
-                        return_frame["binding_name"] = [data.get("binding", {}).get("name",{})]
-                    if "item_preview" in data:
-                        return_frame["item_preview"] = [data.get("item_preview", {})]
-                except Exception as e:
-                    print(f"Failed to fetch or parse item {item_id}: {e}")
-                    continue
+    amount_of_details = len(all_item_ids_to_fetch)
+    print(f"Total unique items to fetch details for: {amount_of_details}")
+
+    # Manual progress bar variables
+    current_processed_count = 0
+    bar_length = 50 # Length of the progress bar in characters
+    
+    # This allows us to use a thread pool to fetch item details concurrently
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_to_item_id = {
+            executor.submit(auth_util.get_api_response, endpoint=f"/data/wow/item/{item_id}", params={"namespace": "static-eu"}): item_id
+            for item_id in all_item_ids_to_fetch
+        }
+
+        # Initial display of the progress bar
+        _update_progress_bar(current_processed_count, amount_of_details, bar_length)
+
+        for future in as_completed(future_to_item_id):
+            item_id = future_to_item_id[future]
+            context = item_id_context[item_id]
+            item_class_id = context["item_class_id"]
+            item_class_name_sanitized = context["class_name_sanitized"]
+            item_class_name_raw = context["class_name_raw"]
+            subclass_id = context["subclass_id"]
+
+            try:
+                response = future.result() 
+                data = response.json()
 
                 if not isinstance(data, dict) or "id" not in data:
-                    print(f"Invalid data format for item {item_id}")
+                    # Print full message on a new line for invalid data, then update progress
+                    sys.stdout.write(f"\nWarning: Invalid data format for item {item_id}\n")
+                    sys.stdout.flush()
                     continue
 
-                #yield return_frame
-                yield data
-                current_details += 1
-                if current_details >= amount_of_details:
-                    break
-                print(f"Current item details count: {current_details}/{amount_of_details} for item ID: {item_id}")
+                item_data_to_yield = {}
+                item_data_to_yield["id"] = data.get("id")
+                if "description" in data:
+                    item_data_to_yield["description"] = data.get("description", {}).get("en_US")
+                if "binding" in data:
+                    item_data_to_yield["binding_name"] = data.get("binding", {}).get("name")
+                if "item_preview" in data:
+                    item_data_to_yield["item_preview"] = data.get("item_preview")
+
+                item_data_to_yield["item_class_id"] = item_class_id
+                item_data_to_yield["item_subclass_id"] = subclass_id if subclass_id is not None else -1
+
+                yield dlt.mark.with_table_name(item_data_to_yield, table_name=f"item_details_{item_class_name_sanitized}")
+
+            except Exception as e:
+                # Print full message on a new line for errors, then update progress
+                sys.stdout.write(f"\nError fetching item {item_id}: {e}\n")
+                sys.stdout.write(f"  Class: {item_class_name_raw}, Subclass: {subclass_id}\n")
+                sys.stdout.flush()
+                continue
+            
+            # Increment and update progress bar
+            current_processed_count += 1
+            _update_progress_bar(current_processed_count, amount_of_details, bar_length)
+
+    # Final newline to ensure subsequent prints appear on a new line
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+    print(f"Finished fetching details for all items. Total processed: {current_processed_count} successfully.")
+
+def _update_progress_bar(current, total, desc, bar_length=50):
+    """
+    Manually updates a console progress bar on the same line.
+    """
+    if total == 0: # Avoid division by zero if no items
+        sys.stdout.write(f"\r{desc}: No items to process.")
+        sys.stdout.flush()
+        return
+
+    progress = current / total
+    arrow = '=' * int(round(progress * bar_length) - 1) + '>'
+    spaces = ' ' * (bar_length - len(arrow))
+    
+    sys.stdout.write(f"\r{desc}: [{arrow}{spaces}] {current}/{total} ({progress:.1%})")
+    sys.stdout.flush()
        
 
 
@@ -209,8 +288,8 @@ def fetch_items():
     start_time = time.time()
 
     print("Fetching item subclasses...")
-    subclass_dict = fetch_item_subclasses()
-    print(f"✅ Item subclasses fetched. Found {len(subclass_dict)} item classes with subclasses.")
+    item_class_dict = fetch_item_class_and_subclasses()
+    print(f"✅ Item subclasses fetched. Found {len(item_class_dict)} item classes with subclasses.")
 
     rarities = [
         "Poor",        # Gray
@@ -255,12 +334,13 @@ def fetch_items():
         total_api_calls += 1
         return response.json().get("results", [])
 
-    class_count = len(subclass_dict)
+    class_count = len(item_class_dict)
     current_class_idx = 0
 
-    for item_class_id, subclass_ids in subclass_dict.items():
+    for item_class_id, value in item_class_dict.items():
         current_class_idx += 1
         print(f"\n--- Processing Item Class {item_class_id} ({current_class_idx}/{class_count}) ---")
+        subclass_ids = value.get("subclass_ids", [])
         subclass_count = len(subclass_ids)
         current_subclass_idx = 0
 
@@ -399,6 +479,7 @@ def fetch_items():
     print(f"------------------------------------")
 
 
+
 # @dlt.source that we use in pipeline.run instead of @dlt.resource we use all the resources we want to run in the pipeline
 """If you want to use a source specific override for the pipeline you can add a list of resources to pick specific runs.
 accepted values are "auctions", "items" and "realm_data". If no list is provided, it will run all resources."""
@@ -413,11 +494,16 @@ def wow_api_source(optional_source_list=None,test_mode=False):
         method_list = []
         if "auctions" in optional_source_list:
             method_list.append(fetch_auction_house_items(test_mode=test_mode))
+        if "commodities" in optional_source_list:
             method_list.append(fetch_ah_commodities())
         if "items" in optional_source_list:
             method_list.append(fetch_items())
         if "realm_data" in optional_source_list:
             method_list.append(fetch_realm_data())
+        if "item_details" in optional_source_list:
+            method_list.append(fetch_item_details())
+        if "media" in optional_source_list:
+            method_list.append(fetch_media_hrfs())
         return method_list
     else:
         #return [fetch_item_details()] 
