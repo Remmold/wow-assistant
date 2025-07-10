@@ -21,16 +21,16 @@ while True:
             run_pipeline(test_mode=False) 
         case "2":
             print("Updating auction house items...")
-            run_pipeline(test_mode=False, sources=["auctions"])
+            run_pipeline(test_mode=False, sources=["auctions"], scheema="raw_auctions")
         case "3":
             print("Updating commodities data...")
-            run_pipeline(test_mode=False, sources=["commodities"])
+            run_pipeline(test_mode=False, sources=["commodities"], scheema="raw_auctions")
         case "4":
             print("Updating Item data...")
-            run_pipeline(test_mode=False, sources=["items"])
+            run_pipeline(test_mode=False, sources=["items"], scheema="raw_items")
         case "5":
             print("Updating Item_details data...")
-            run_pipeline(test_mode=False, sources=["item_details"])
+            run_pipeline(test_mode=False, sources=["item_details"], scheema="raw_items")
         case "6":
             print("1: Create test database")
             print("2: Update test database")
@@ -41,7 +41,7 @@ while True:
                     run_pipeline(test_mode=True)
                 case "2":
                     print("Updating test database...")
-                    run_pipeline(test_mode=True, sources=["auctions"])
+                    run_pipeline(test_mode=True, sources=["auctions", "commodities"], scheema="raw_auctions")
                 case _:
                     print("Invalid choice. Exiting.")
                     sys.exit(1) 
