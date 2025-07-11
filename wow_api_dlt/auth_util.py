@@ -1,6 +1,8 @@
 from dlt.sources.helpers.rest_client.auth import OAuth2ClientCredentials
 import dlt
 from dlt.sources.helpers.rest_client import RESTClient
+import time
+from .rate_limiter import blizzard_api_rate_limiter
 BASE_URL = "https://eu.api.blizzard.com"
 
 
@@ -24,6 +26,8 @@ def get_api_response(endpoint: str, params: dict = {}):
     """
     Makes a request to the Blizzard API and returns the response.
     """
+    blizzard_api_rate_limiter.wait_for_token()  # Wait for a token before making the request
+
     client = get_api_client()
     response = client.get(path=endpoint, params=params)
     response.raise_for_status() # Ensure we raise an error for bad responses
