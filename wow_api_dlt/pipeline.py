@@ -1,6 +1,6 @@
 import dlt
 
-from .resources import wow_api_source
+from .resources.source import wow_api_source
 import os
 
 DB_PATH = os.path.abspath("wow_api_dbt/wow_api_data.duckdb")

@@ -1,4 +1,5 @@
-from wow_api_dlt import  auth_util
+from wow_api_dlt.utilities import  auth_util
+import sys
 
 # Fetch and bring all the connected realm IDs, returns a list of IDs
 def fetch_realm_ids():
@@ -51,6 +52,22 @@ def fetch_item_class_and_subclasses():
 
         print(f"Item class {value['name']} has subclasses: {subclass_ids}")
     return item_class_dict
+
+def _update_progress_bar(current, total, desc, bar_length=50):
+    """
+    Manually updates a console progress bar on the same line.
+    """
+    if total == 0: # Avoid division by zero if no items
+        sys.stdout.write(f"\r{desc}: No items to process.")
+        sys.stdout.flush()
+        return
+
+    progress = current / total
+    arrow = '=' * int(round(progress * bar_length) - 1) + '>'
+    spaces = ' ' * (bar_length - len(arrow))
+    
+    sys.stdout.write(f"\r{desc}: [{arrow}{spaces}] {current}/{total} ({progress:.1%})")
+    sys.stdout.flush()
 
 if __name__ == "__main__":
     fetch_item_classes()
