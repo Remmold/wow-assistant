@@ -1,277 +1,169 @@
 import dlt
 from wow_api_dlt import db
 from wow_api_dlt.utilities.dlt_util import fetch_item_class_and_subclasses, _update_progress_bar
+from wow_api_dlt.utilities.auth_util import get_api_response
 import time
 import sys 
-
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from wow_api_dlt.utilities import auth_util #this is used to multithreading. we use it to perform multiple API calls in parallel, which can significantly speed up the data fetching process.
-@dlt.resource(table_name="items", write_disposition="merge", primary_key="id")
+FULL_ITEM_CONFIG = {
+    "namespace": "static-eu",
+    "orderby": "id",
+    "api_results_per_page": 1000, # Max allowed by Blizzard API for search
+    "max_concurrent_requests": 10, # Number of concurrent API calls for pagination
+}
+
+@dlt.resource(table_name="items", write_disposition="replace", primary_key="id")
 def fetch_items():
-    print("Starting item data extraction with adaptive filtering...")
+    """
+    Fetches all items from the Blizzard API using pagination and ID range fetching
+    to handle large datasets effectively.
+    """
+    print("Starting full item data extraction...")
     start_time = time.time()
 
-    print("Fetching item subclasses...")
-    item_class_dict = fetch_item_class_and_subclasses()
-    print(f"✅ Item subclasses fetched. Found {len(item_class_dict)} item classes with subclasses.")
-
-    rarities = [
-        "Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Artifact", "Heirloom"
-    ]
-    print(f"Configured with {len(rarities)} rarities: {', '.join(rarities)}")
-
-    min_overall_ilvl = 1
-    max_overall_ilvl = 750
-    step = 10
-
-    all_level_ranges = [
-        (start_ilvl, min(start_ilvl + step - 1, max_overall_ilvl))
-        for start_ilvl in range(min_overall_ilvl, max_overall_ilvl + step, step)
-    ]
-    print(f"Pre-generated {len(all_level_ranges)} item level ranges for adaptive filtering.")
-
     total_items_fetched = 0
-    total_api_calls = 0 # This will now be primarily handled by the _fetch_page_data wrapper
-    incomplete_extractions = set()
+    all_yielded_ids = set() # To ensure unique items are yielded
 
-    ADAPTIVE_THRESHOLD_PAGES = 10
-    API_RESULTS_PER_PAGE = 100
-    REFINED_QUERY_PAGE_LIMIT = 10
-    BROAD_SEARCH_SAFETY_CAP_PAGES = ADAPTIVE_THRESHOLD_PAGES + 10
+    current_min_id = 1 
 
-    # MAX_WORKERS for _fetch_page_data calls
-    # You might want to experiment with this value. 
-    # It allows you to fire off many page requests concurrently.
-    MAX_WORKERS_ITEM_FETCH = 20 # Can be higher than 10, as the rate limiter will govern actual API hits
+    id_chunk_size = 1000 # Example: Fetch items with ID 1-10000, then 10001-20000, etc.
 
-    # List to store all tasks (endpoint, params, current_page, filter_description)
-    all_api_tasks = []
-    task_context_map = {} # To store context for each task (e.g., class_id, subclass_id, rarity)
+    highest_id_fetched = 0
 
-    # First pass: Collect all broad and refined search tasks
-    for item_class_id, value in item_class_dict.items():
-        subclass_ids = value.get("subclass_ids", [])
-        if not subclass_ids:
-            subclass_ids = [None]
+    while True:
+        sys.stdout.write(f"\nProcessing ID range: [{current_min_id}, {current_min_id + id_chunk_size - 1}]...\n")
+        sys.stdout.flush()
 
-        for subclass_id in subclass_ids:
-            for rarity in rarities:
-                base_params = {
-                    "namespace": "static-eu",
-                    "orderby": "id",
-                    "item_class.id": item_class_id,
-                    "item_subclass.id": subclass_id,
-                    "quality.name.en_US": rarity,
+        range_start = current_min_id
+        range_end = current_min_id + id_chunk_size - 1
+
+        # Inner loop: Paginate within the current ID range
+        page_num = 1
+        page_futures = []
+        paginating_in_range = True
+
+        # Use ThreadPoolExecutor for concurrent page fetching within an ID range
+        with ThreadPoolExecutor(max_workers=FULL_ITEM_CONFIG["max_concurrent_requests"]) as executor:
+            while paginating_in_range:
+                params = {
+                    "namespace": FULL_ITEM_CONFIG["namespace"],
+                    "orderby": FULL_ITEM_CONFIG["orderby"],
+                    "_pageSize": FULL_ITEM_CONFIG["api_results_per_page"],
+                    "_page": page_num,
+                    "id": f"[{range_start},{range_end}]" # Filter by ID range
+
                 }
                 endpoint = "/data/wow/search/item"
-                
-                # Broad search
-                for page in range(1, BROAD_SEARCH_SAFETY_CAP_PAGES + 1):
-                    task_key = (endpoint, tuple(sorted(base_params.items())), page, "broad", item_class_id, subclass_id, rarity)
-                    all_api_tasks.append((endpoint, base_params.copy(), page, f"Class {item_class_id}, Subclass {subclass_id}, Rarity '{rarity}' (broad query page {page})"))
-                    task_context_map[task_key] = {
-                        "type": "broad",
-                        "item_class_id": item_class_id,
-                        "subclass_id": subclass_id,
-                        "rarity": rarity,
-                        "page": page
-                    }
-                    # We can't know yet if we need to refilter by ilvl here,
-                    # so we'll just gather all potential broad requests.
-                    # The adaptive logic will apply *after* responses are received.
+                filter_description = f"ID Range [{range_start},{range_end}] Page {page_num}"
 
-                    # To avoid submitting an insane number of tasks for broad search if it's not needed
-                    # We'll rely on the actual results processing to stop generating new tasks if 'results' is empty
-                    # Or if a page limit is hit. This means we'll over-submit initial tasks and then filter.
-                    # For a truly adaptive pre-submission, this part would be more complex and iterative.
-                    # For now, let's keep it simpler: submit all possible *broad* pages, then process results.
-                    # The ILVL part will be handled in a second pass/later logic if a broad search hits its limit.
+                # Submit the API call to the thread pool
+                future = executor.submit(get_api_response, endpoint=endpoint, params=params)
+                page_futures.append((future, filter_description, page_num))
 
-    print(f"Collected {len(all_api_tasks)} potential broad search API tasks.")
+                if len(page_futures) >= FULL_ITEM_CONFIG["max_concurrent_requests"]:
+                    for processed_future, desc, p_num in page_futures:
+                        try:
+                            response = processed_future.result()
+                            data = response.json()
+                            results = data.get("results", [])
 
-    # Execute all broad search tasks
-    processed_broad_tasks = {} # (item_class_id, subclass_id, rarity) -> { 'hit_threshold': bool, 'pages_fetched': int }
-    
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS_ITEM_FETCH) as executor:
-        future_to_task_key = {}
-        for task in all_api_tasks:
-            # Create a unique key for each task to retrieve its context later
-            endpoint, params, page, desc = task
-            task_key = (endpoint, tuple(sorted(params.items())), page, desc)
-            future_to_task_key[executor.submit(auth_util.get_api_response, endpoint=endpoint, params=params)] = task_key
-
-        print(f"Submitting {len(future_to_task_key)} broad search API requests...")
-        
-        # Manual progress bar
-        current_processed_count = 0
-        total_tasks = len(future_to_task_key)
-        bar_length = 50
-        _update_progress_bar(current_processed_count, total_tasks, "Fetching Broad Item Data")
-
-        for future in as_completed(future_to_task_key):
-            task_key = future_to_task_key[future]
-            # Reconstruct original task details
-            original_endpoint, original_params_tuple, original_page, original_desc = task_key 
-            # We need to map this back to the (class, subclass, rarity) for the adaptive logic
-            # This is where the 'task_context_map' would come in, but we discarded it for simplicity
-            # Let's re-extract from original_desc for this example, but it's not ideal.
-            # A better way is to attach the context to the future itself or pass it through.
-            
-            # Simple parsing of description to get context
-            # Example: "Class 0, Subclass 0, Rarity 'Common' (broad query page 1)"
-            # This is fragile, a dedicated task_context_map is better
-            # For a quick fix, let's just use the `original_params_tuple` and convert back to dict
-            context_params = dict(original_params_tuple)
-            item_class_id = context_params.get("item_class.id")
-            subclass_id = context_params.get("item_subclass.id")
-            rarity = context_params.get("quality.name.en_US")
-
-            composite_key = (item_class_id, subclass_id, rarity)
-            if composite_key not in processed_broad_tasks:
-                processed_broad_tasks[composite_key] = {'hit_threshold': False, 'pages_fetched': 0}
-
-            try:
-                response = future.result()
-                data = response.json()
-                results = data.get("results", [])
-
-                if results:
-                    for result in results:
-                        yield result["data"]
-                        total_items_fetched += 1
+                            if not results:
+                                sys.stdout.write(f"\nNo more results on {desc}. Stopping pagination for this ID range.\n")
+                                sys.stdout.flush()
+                                paginating_in_range = False # No more results for this range
+                                break # Exit inner future processing loop
+                            
+                            for result in results:
+                                if "data" in result:
+                                    item_id = result["data"].get("id")
+                                    if item_id is not None:
+                                        # Update highest ID found
+                                        if item_id > highest_id_fetched:
+                                            highest_id_fetched = item_id
+                                        
+                                        if item_id not in all_yielded_ids:
+                                            # You can refine the data before yielding here if needed
+                                            yield result["data"]
+                                            all_yielded_ids.add(item_id)
+                                            total_items_fetched += 1
+                                else:
+                                    sys.stdout.write(f"\nWarning: 'data' field missing in result for {desc}. Result: {result}\n")
+                                    sys.stdout.flush()
+                            
+                            _update_progress_bar(len(all_yielded_ids), total_items_fetched + 1, f"Fetching items in {desc}") # Progress bar logic here might need refinement
+                            
+                        except Exception as e:
+                            sys.stdout.write(f"\nError during fetch for {desc}: {e}\n")
+                            sys.stdout.flush()
+                            # Continue to next future even if one fails
                     
-                    processed_broad_tasks[composite_key]['pages_fetched'] += 1
+                    page_futures = [] # Clear futures after processing a batch
 
-                    # Check for adaptive filtering condition
-                    if len(results) == API_RESULTS_PER_PAGE and processed_broad_tasks[composite_key]['pages_fetched'] >= ADAPTIVE_THRESHOLD_PAGES:
-                        processed_broad_tasks[composite_key]['hit_threshold'] = True
-                        sys.stdout.write(f"\n            Reached {processed_broad_tasks[composite_key]['pages_fetched']} full pages for {composite_key}. Will trigger refined search.\n")
-                        sys.stdout.flush()
+                    if not paginating_in_range: # If we stopped in the inner loop, break outer too
+                        break
+                    
+                page_num += 1 # Move to the next page
 
-                elif processed_broad_tasks[composite_key]['pages_fetched'] < original_page: # Only if we haven't already hit a limit and stopped for this filter
-                    # If results are empty, it means this broad path is exhausted for this filter.
-                    # We only mark it as 'not hitting threshold' if we truly got less than threshold pages.
-                    if processed_broad_tasks[composite_key]['pages_fetched'] < ADAPTIVE_THRESHOLD_PAGES:
-                        processed_broad_tasks[composite_key]['hit_threshold'] = False
-                    # Stop processing further pages for this specific (class, subclass, rarity) combo
-                    # This requires more complex management of which futures to cancel or not submit if earlier pages were empty.
-                    # For simplicity, we process all submitted, and handle the logic here.
-                    sys.stdout.write(f"\n            No more results for {composite_key} broad filter on page {original_page}. Breaking.\n")
-                    sys.stdout.flush()
-
-            except Exception as e:
-                sys.stdout.write(f"\nError fetching broad data for {composite_key} page {original_page}: {e}\n")
-                sys.stdout.flush()
-                # If an error occurs, consider this combination as potentially incomplete
-                incomplete_extractions.add((item_class_id, subclass_id))
-            
-            current_processed_count += 1
-            _update_progress_bar(current_processed_count, total_tasks, "Fetching Broad Item Data")
-            
-    sys.stdout.write("\n")
-    sys.stdout.flush()
-    print("Finished broad search requests. Now processing refined searches if needed.")
-
-    # Second pass: Collect and execute refined search tasks if a broad search hit its threshold
-    refined_api_tasks = []
-    for item_class_id, value in item_class_dict.items():
-        subclass_ids = value.get("subclass_ids", [])
-        if not subclass_ids:
-            subclass_ids = [None]
-        for subclass_id in subclass_ids:
-            for rarity in rarities:
-                composite_key = (item_class_id, subclass_id, rarity)
-                if processed_broad_tasks.get(composite_key, {}).get('hit_threshold'):
-                    for min_level, max_level in all_level_ranges:
-                        ilvl_params = {
-                            "namespace": "static-eu",
-                            "orderby": "id",
-                            "item_class.id": item_class_id,
-                            "item_subclass.id": subclass_id,
-                            "quality.name.en_US": rarity,
-                            "min_level": min_level,
-                            "max_level": max_level,
-                        }
-                        endpoint = "/data/wow/search/item"
-                        for page in range(1, REFINED_QUERY_PAGE_LIMIT + 1):
-                            refined_api_tasks.append((endpoint, ilvl_params.copy(), page, 
-                                                      f"Class {item_class_id}, Subclass {subclass_id}, Rarity '{rarity}', ILvl {min_level}-{max_level} page {page}"))
-                            # Also add to incomplete_extractions if any refined query hits its limit
-                            # This needs to be handled AFTER future.result() and page checking.
-
-    print(f"Collected {len(refined_api_tasks)} potential refined search API tasks.")
-
-    if refined_api_tasks:
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS_ITEM_FETCH) as executor:
-            future_to_task_key = {}
-            for task in refined_api_tasks:
-                endpoint, params, page, desc = task
-                task_key = (endpoint, tuple(sorted(params.items())), page, desc)
-                future_to_task_key[executor.submit(auth_util.get_api_response, endpoint=endpoint, params=params)] = task_key
-
-            print(f"Submitting {len(future_to_task_key)} refined search API requests...")
-
-            current_processed_count = 0
-            total_tasks = len(future_to_task_key)
-            _update_progress_bar(current_processed_count, total_tasks, "Fetching Refined Item Data")
-
-            for future in as_completed(future_to_task_key):
-                task_key = future_to_task_key[future]
-                original_endpoint, original_params_tuple, original_page, original_desc = task_key
-                context_params = dict(original_params_tuple)
-                item_class_id = context_params.get("item_class.id")
-                subclass_id = context_params.get("item_subclass.id")
-
+            # Process any remaining futures if the loop ended early
+            for processed_future, desc, p_num in page_futures:
                 try:
-                    response = future.result()
+                    response = processed_future.result()
                     data = response.json()
                     results = data.get("results", [])
 
-                    if results:
-                        for result in results:
-                            yield result["data"]
-                            total_items_fetched += 1
-                        
-                        # If a refined query hits its limit (i.e., we get full pages up to REFINED_QUERY_PAGE_LIMIT)
-                        # and there might be more, mark it as incomplete.
-                        if len(results) == API_RESULTS_PER_PAGE and original_page >= REFINED_QUERY_PAGE_LIMIT:
-                            incomplete_extractions.add((item_class_id, subclass_id))
-                            sys.stdout.write(f"\n            ⚠️ Refined query for {item_class_id}, {subclass_id} page {original_page} hit limit. Potentially incomplete.\n")
+                    if not results:
+                        sys.stdout.write(f"\nNo more results on {desc}. Stopping pagination for this ID range.\n")
+                        sys.stdout.flush()
+                        paginating_in_range = False
+                        break
+                    
+                    for result in results:
+                        if "data" in result:
+                            item_id = result["data"].get("id")
+                            if item_id is not None:
+                                if item_id > highest_id_fetched:
+                                    highest_id_fetched = item_id
+                                if item_id not in all_yielded_ids:
+                                    yield result["data"]
+                                    all_yielded_ids.add(item_id)
+                                    total_items_fetched += 1
+                        else:
+                            sys.stdout.write(f"\nWarning: 'data' field missing in result for {desc}. Result: {result}\n")
                             sys.stdout.flush()
-
+                    
+                    _update_progress_bar(len(all_yielded_ids), total_items_fetched + 1, f"Fetching items in {desc}")
                 except Exception as e:
-                    sys.stdout.write(f"\nError fetching refined data for {item_class_id}, {subclass_id} page {original_page}: {e}\n")
+                    sys.stdout.write(f"\nError during fetch for {desc}: {e}\n")
                     sys.stdout.flush()
-                    incomplete_extractions.add((item_class_id, subclass_id)) # Mark as incomplete on error too
-                
-                current_processed_count += 1
-                _update_progress_bar(current_processed_count, total_tasks, "Fetching Refined Item Data")
-        
+
         sys.stdout.write("\n")
         sys.stdout.flush()
-        print("Finished refined search requests.")
+        
 
-    # Your original summary print statements remain unchanged
+        
+        previous_total_items_fetched = total_items_fetched
+        
+        # Advance to the next ID range
+        current_min_id += id_chunk_size
+
+        if (current_min_id - id_chunk_size) > (highest_id_fetched + id_chunk_size) and (total_items_fetched == previous_total_items_fetched):
+             print(f"Stopping fetch: No new items found in range [{current_min_id - id_chunk_size}, {current_min_id - 1}] and past highest ID {highest_id_fetched}.")
+             break # Break the outer while True loop
+
+        # To prevent excessively large IDs if there are gaps
+        if current_min_id > 1000000: # Arbitrary large number to cap search if no more items are found
+            print(f"Stopping fetch: Reached practical ID limit ({current_min_id}).")
+            break
+
     end_time = time.time()
     duration = end_time - start_time
 
-    print(f"\n--- Item Data Extraction Summary ---")
-    print(f"✅ Fetched total {total_items_fetched} items.")
-    # total_api_calls count will be tricky here, as we submit tasks not individual calls.
-    # The actual API call count is now within auth_util.get_api_response and might be useful to track there,
-    # or you can just count the number of futures submitted.
+    print(f"\n--- Full Item Data Extraction Summary ---")
+    print(f"✅ Fetched total {total_items_fetched} unique items.")
     print(f"✅ Total extraction time: {duration:.2f} seconds.")
-
-    print(f"\n--- Incomplete Extractions Summary ---")
-    if incomplete_extractions:
-        print(f"❌ Found {len(incomplete_extractions)} item class/subclass combinations that were not fully extracted (hit page limits):")
-        for class_id, sub_id in sorted(list(incomplete_extractions)):
-            print(f"  - Item Class: {class_id}, Subclass: {sub_id}")
-        print("\nConsider increasing page limits (REFINED_QUERY_PAGE_LIMIT, BROAD_SEARCH_SAFETY_CAP_PAGES) or further refining filters for these combinations.")
-    else:
-        print("✅ All item class/subclass combinations appear to have been fully extracted within defined page limits.")
-    print(f"------------------------------------")
+    print("------------------------------------")
 
 @dlt.resource()
 def fetch_item_details():
