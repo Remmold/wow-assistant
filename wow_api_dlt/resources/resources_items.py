@@ -28,7 +28,7 @@ def fetch_items():
 
     current_min_id = 1 
 
-    id_chunk_size = 1000 # Example: Fetch items with ID 1-10000, then 10001-20000, etc.
+    id_chunk_size = 1000  # Example: Fetch items with ID 1-1000, then 1001-2000, etc.
 
     highest_id_fetched = 0
 

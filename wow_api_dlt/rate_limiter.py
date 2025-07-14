@@ -60,7 +60,7 @@ class TokenBucket:
 # Initialize a global/shared rate limiter instance
 # Target: 36,000 requests/hour = 600 requests/minute = 10 requests/second
 # Let's set a capacity that allows for some burst, e.g., 600 requests (1 minute's worth)
-API_CAPACITY = 600 
-API_REFILL_RATE_PER_SECOND = 10 
+API_CAPACITY = 550
+API_REFILL_RATE_PER_SECOND = 8 
 
 blizzard_api_rate_limiter = TokenBucket(capacity=API_CAPACITY, refill_rate_per_second=API_REFILL_RATE_PER_SECOND)

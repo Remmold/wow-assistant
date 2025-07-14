@@ -18,6 +18,6 @@ SELECT
     max_count AS max_stack_size,
     media__id AS media_id,
     m.url as icon_hrf
-FROM {{ source('raw', 'items') }} AS i
-LEFT JOIN {{ source('raw', 'item_media') }} AS m ON i.media__id = m.media_id
+FROM {{ source('raw_items', 'items') }} AS i
+LEFT JOIN {{ source('raw_items', 'item_media') }} AS m ON i.media__id = m.media_id
 

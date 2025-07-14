@@ -14,14 +14,14 @@ def fetch_media_hrfs():
     
     media_ids_to_fetch = []
     with db.DuckDBConnection(db_path) as db_handler:
-        df = db_handler.query("SELECT DISTINCT media_id FROM refined.dim_items WHERE media_id IS NOT NULL")
+        df = db_handler.query("SELECT DISTINCT media__id FROM raw_items.items WHERE media__id IS NOT NULL")
         # df = df[:100] # For testing purposes, limit to 100 rows
         for _, row in df.iterrows():
             try:
-                media_id = int(row["media_id"])
+                media_id = int(row["media__id"])
                 media_ids_to_fetch.append(media_id)
             except (ValueError, TypeError):
-                print(f"Skipping invalid media_id: {row['media_id']}")
+                print(f"Skipping invalid media_id: {row['media__id']}")
                 continue
 
     amount_of_media = len(media_ids_to_fetch)

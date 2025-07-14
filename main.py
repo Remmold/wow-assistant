@@ -8,12 +8,13 @@ while True:
     print("2: Update auction house items (fetch and load into DuckDB)")
     print("3: Update commodities data (fetch and load into DuckDB)")
     print("4: Update Item data (fetch and load into DuckDB)")
-    print("5: Update Item_details data (fetch and load into DuckDB)")
-    print("6: Create/Update Test Database (creates or updates a database with a smaller subset of data for testing purposes)")
-    print("7: View database with DuckDB UI")
-    print("8: Exit")
+    print("5: Update item_media data (fetch and load into DuckDB)")
+    print("6: Update item_details for items (fetch and load into DuckDB)")
+    print("7: Create/Update Test Database (creates or updates a database with a smaller subset of data for testing purposes)")
+    print("8: View database with DuckDB UI")
+    print("9: Exit")
 
-    choice = input("Please enter your choice (1-7): ")
+    choice = input("Please enter your choice (1-9): ")
 
     match choice:
         case "1":
@@ -29,9 +30,12 @@ while True:
             print("Updating Item data...")
             run_pipeline(test_mode=False, sources=["items"], scheema="raw_items")
         case "5":
+            print("Updating media data for items...")
+            run_pipeline(test_mode=False, sources=["item_media"], scheema="raw_items")
+        case "6":
             print("Updating Item_details data...")
             run_pipeline(test_mode=False, sources=["item_details"], scheema="raw_items")
-        case "6":
+        case "7":
             print("1: Create test database")
             print("2: Update test database")
             test_choice = input("Please enter your choice (1-2): ")
@@ -45,7 +49,7 @@ while True:
                 case _:
                     print("Invalid choice. Exiting.")
                     sys.exit(1) 
-        case "7":
+        case "8":
             print("Attempting to open DuckDB UI for main database...")
             try:
                 subprocess.Popen(["duckdb", "-ui", "wow_api_dbt/wow_api_data.duckdb"])
@@ -54,7 +58,7 @@ while True:
                 print("Error: 'duckdb' command not found. Please ensure DuckDB CLI is installed and in your system's PATH.")
             except subprocess.CalledProcessError as e:
                 print(f"Error launching DuckDB UI: {e}. Check DuckDB installation and permissions.")
-        case "8":
+        case "9":
             print("Exiting the program. Farewell, adventurer!")
             sys.exit(0)
         case _: # Handles any other invalid input for the main menu

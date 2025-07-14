@@ -25,7 +25,7 @@ def wow_api_source(optional_source_list=None,test_mode=False):
             method_list.append(fetch_realm_data())
         if "item_details" in optional_source_list:
             method_list.append(fetch_item_details())
-        if "media" in optional_source_list:
+        if "item_media" in optional_source_list:
             method_list.append(fetch_media_hrfs())
         return method_list
     else:
