@@ -165,7 +165,7 @@ def fetch_items():
     print(f"✅ Total extraction time: {duration:.2f} seconds.")
     print("------------------------------------")
 
-@dlt.resource()
+@dlt.resource(write_disposition="replace" ,table_name="item_details")
 def fetch_item_details():
     db_path = "wow_api_dbt/wow_api_data.duckdb"
 
@@ -188,12 +188,12 @@ def fetch_item_details():
         for subclass_id in subclass_ids:
             with db.DuckDBConnection(db_path) as db_handler:
                 if subclass_id is not None:
-                    query = f"SELECT DISTINCT id FROM refined.dim_items WHERE item_class_id = {item_class_id} AND item_subclass_id = {subclass_id}"
+                    query = f"SELECT DISTINCT id FROM raw_items.items WHERE item_class__id = {item_class_id} AND item_subclass__id = {subclass_id}"
                 else:
-                    query = f"SELECT DISTINCT id FROM refined.dim_items WHERE item_class_id = {item_class_id}"
-                
+                    query = f"SELECT DISTINCT id FROM raw_items.items WHERE item_class__id = {item_class_id}"
+
                 df = db_handler.query(query)
-                # df = df[:1] # Keep this commented out if you want to fetch all items for actual runs
+                #df = df[:1] # Keep this commented out if you want to fetch all items for actual runs
 
             for _, row in df.iterrows():
                 item_id = int(row["id"])
@@ -240,19 +240,7 @@ def fetch_item_details():
                     sys.stdout.flush()
                     continue
 
-                item_data_to_yield = {}
-                item_data_to_yield["id"] = data.get("id")
-                if "description" in data:
-                    item_data_to_yield["description"] = data.get("description", {}).get("en_US")
-                if "binding" in data:
-                    item_data_to_yield["binding_name"] = data.get("binding", {}).get("name")
-                if "item_preview" in data:
-                    item_data_to_yield["item_preview"] = data.get("item_preview")
-
-                item_data_to_yield["item_class_id"] = item_class_id
-                item_data_to_yield["item_subclass_id"] = subclass_id if subclass_id is not None else -1
-
-                yield dlt.mark.with_table_name(item_data_to_yield, table_name=f"item_details_{item_class_name_sanitized}")
+                yield data
 
             except Exception as e:
                 # Print full message on a new line for errors, then update progress

@@ -2,6 +2,7 @@ from dlt.sources.helpers.rest_client.auth import OAuth2ClientCredentials
 import dlt
 from dlt.sources.helpers.rest_client import RESTClient
 import time
+import sys # Added for print statements in main block
 
 # --- IMPORTANT: Add these imports ---
 import requests
@@ -9,6 +10,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 # --- END IMPORTANT IMPORTS ---
 
+# Import the configured blizzard_api_rate_limiter from your rate_limiter module.
+# This variable is now an instance of HourlyBreakRateLimiter.
 from ..rate_limiter import blizzard_api_rate_limiter
 
 BASE_URL = "https://eu.api.blizzard.com"
@@ -76,20 +79,12 @@ def get_api_response(endpoint: str, params: dict = {}):
     This function now uses the globally configured `_blizzard_api_client` instance,
     which handles connection pooling and retries internally.
     """
-    blizzard_api_rate_limiter.wait_for_token()  
+    # Call the wait_for_token_with_break method from your HourlyBreakRateLimiter instance
+    blizzard_api_rate_limiter.wait_for_token_with_break()  
 
     # Use the pre-initialized global client
     response = _blizzard_api_client.get(path=endpoint, params=params)
     response.raise_for_status() 
     return response
 
-if __name__ == "__main__":
-    print("Testing get_api_response...")
-    try:
-        test_endpoint = "/data/wow/connected-realm/1304/auctions" # Example realm ID
-        test_params = {"namespace": "dynamic-eu"}
-        response = get_api_response(test_endpoint, test_params)
-        print(f"Test successful! Status Code: {response.status_code}")
-    except Exception as e:
-        print(f"Test failed: {e}")
 
