@@ -15,8 +15,8 @@ WITH connected_realms AS (
     realm_data.has_queue,
     realm_data.mythic_leaderboards__href,
     rdr.is_tournament
-  FROM {{ source('raw', 'realm_data') }} AS realm_data
-  JOIN {{ source('raw', 'realm_data__realms') }} AS rdr
+  FROM {{ source('raw_misc', 'realm_data') }} AS realm_data
+  JOIN {{ source('raw_misc', 'realm_data__realms') }} AS rdr
     ON rdr._dlt_parent_id = realm_data._dlt_id
 )
 

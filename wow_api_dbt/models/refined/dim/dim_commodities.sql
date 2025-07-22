@@ -5,4 +5,4 @@ SELECT
   quantity,
   unit_price,
   time_left,
-FROM {{ source('raw', 'commodities') }}
+FROM {{ source('raw_auctions', 'commodities') }}

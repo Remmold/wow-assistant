@@ -37,6 +37,6 @@ SELECT
     idet.preview_item__requirements__playable_specializations__display_string__en_us AS specializations_requirements,
     istat.type__name__en_us AS stat_type,
     istat.value AS value
-FROM {{ source('raw', 'item_details') }} AS idet
+FROM {{ source('raw_items', 'item_details') }} AS idet
 
-LEFT JOIN {{ source('raw', 'item_details__preview_item__stats') }} AS istat ON istat._dlt_parent_id = idet._dlt_id
+LEFT JOIN {{ source('raw_items', 'item_details__preview_item__stats') }} AS istat ON istat._dlt_parent_id = idet._dlt_id
