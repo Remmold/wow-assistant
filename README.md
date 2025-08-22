@@ -147,10 +147,10 @@ Postconditions:
 ## How to run
 1. **Clone the repository:**
     ```git bash
-    git clone https://github.com/Nemanja1208/InFiNetCode-Hackaton2025-Team1
+    git clone https://github.com/Remmold/wow-assistant.git
 2. **Navigate to the project root:**
     ```git bash
-    cd InFiNetCode-Hackaton2025-Team1
+    cd https://github.com/Remmold/wow-assistant.git
 3. **Create virtual environment (with `uv venv`):**
     ```git bash
     uv venv .venv
@@ -204,3 +204,4 @@ Test to be added.
 <a href="https://github.com/wahdanz1" target="_blank">`Daniel (wahdanz1)`</a>
 
 <a href="https://github.com/aeriesAce" target="_blank">`Elvira (aeriesAce)`</a>
+
